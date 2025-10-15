@@ -1,18 +1,3 @@
-¡Absolutamente! Aquí tienes el código completo y final para tu archivo aplicacion de agente fotografico.py.
-
-He incorporado todas las correcciones necesarias:
-
-Inicialización de Gemini: Corregido el error de validación de Pydantic (ValidationError) al crear solo un modelo base y pasar la herramienta de Google Search en la llamada a generate_content en la Pestaña 5.
-
-Pestaña 2 (Descarga): Corregido el error de clave de elemento duplicado (StreamlitDuplicateElementKey) añadiendo una clave única al botón de descarga.
-
-Pestaña 4 (Chat): Corregida la lógica de la conversación para asegurar que la sesión de chat se maneje correctamente y el botón de reinicio funcione fuera del bucle de entrada de usuario.
-
-Simplemente reemplaza el contenido completo de tu archivo aplicacion de agente fotografico.py en GitHub con el siguiente código.
-
-Código Completo y Final: aplicacion de agente fotografico.py
-Python
-
 # aplicacion de agente fotografico.py
 from google import genai
 from google.genai.errors import APIError
@@ -128,7 +113,7 @@ with tab1:
             image_data.save(save_path)
             st.success(f"Foto guardada exitosamente como **{filename}**.")
             
-# === PESTAÑA 2: SUBIR / DESCARGAR ARCHIVOS (CORREGIDA) ===
+# === PESTAÑA 2: SUBIR / DESCARGAR ARCHIVOS ===
 with tab2:
     st.header("Subir Archivos")
     uploaded_file = st.file_uploader(
@@ -154,7 +139,7 @@ with tab2:
                     label=f"Descargar {selected_file}",
                     data=file,
                     file_name=selected_file,
-                    key=f"download_btn_{selected_file}" # <--- ¡CLAVE ÚNICA AÑADIDA!
+                    key=f"download_btn_{selected_file}" # Clave única
                 )
     else:
         st.info("No hay fotos guardadas para descargar.")
@@ -174,11 +159,11 @@ with tab3:
             if st.button(f"🗑️ Eliminar {selected_photo}", key=f"delete_btn_{selected_photo}"):
                 os.remove(os.path.join(PHOTOS_DIR, selected_photo))
                 st.success(f"Archivo **{selected_photo}** eliminado. (Recarga la página para actualizar la lista)")
-                st.rerun() # Opcional: Recarga inmediata para actualizar la lista
+                st.rerun() 
     else:
         st.info("La carpeta interna está vacía.")
         
-# === PESTAÑA 4: CHAT CON GEMINI (FINALMENTE CORREGIDA) ===
+# === PESTAÑA 4: CHAT CON GEMINI ===
 with tab4:
     st.header("Chat con Gemini ✨")
     st.markdown("Mantén una conversación continua con Gemini. ¡El historial se guarda!")
@@ -234,13 +219,12 @@ with tab4:
         st.session_state["messages"] = [{"role": "model", "content": "Chat Reiniciado. ¿En qué puedo ayudarte?"}]
         st.rerun() 
         
-# === PESTAÑA 5: BUSCADOR WEB (CORREGIDA) ===
+# === PESTAÑA 5: BUSCADOR WEB ===
 with tab5:
     st.header("Buscador Web 🌐")
     st.markdown("Usa la inteligencia de Gemini con acceso directo a Google Search.")
     
     # 1. Obtener el modelo de base
-    # model_base es global
     
     # 2. Campo de entrada para la consulta
     prompt = st.text_input(
@@ -275,7 +259,6 @@ def generate_maps_url(origin, stops, mode="driving"):
     """Genera una URL de Google Maps para direcciones con waypoints."""
     # Nota: El formato real de Google Maps para waypoints es más complejo,
     # pero simplificamos con un formato base para la demostración.
-    # Usamos una URL de ejemplo
     base_url = "https://www.google.com/maps/dir/" 
     
     route_parts = [origin.replace(" ", "+")]
