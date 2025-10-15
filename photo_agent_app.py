@@ -19,24 +19,20 @@ os.makedirs(PHOTOS_DIR, exist_ok=True)
 # --- CONFIGURACIÓN DE GEMINI Y HERRAMIENTAS (NUEVO) ---
 # ----------------------------------------------------
 def get_gemini_client():
-    """Inicializa el cliente Gemini y el modelo con herramientas de búsqueda."""
+    """Inicializa el cliente Gemini y verifica la clave API."""
     gemini_key = os.environ.get("GEMINI_API_KEY")
     if not gemini_key:
+        # El mensaje de error personalizado ya no es necesario si la clave funciona
         st.error("Error: La clave GEMINI_API_KEY no está configurada. Por favor, añádela en los Secrets de Streamlit Cloud.")
         st.stop()
     
     try:
         client = genai.Client(api_key=gemini_key)
-        # Se define el modelo con la herramienta de búsqueda de Google (Google Search)
-        model = client.models.get(
-            model="gemini-2.5-flash",
-            config={"tools": [{"google_search": {}}]}
-        )
-        return client, model
+        # Solo devolvemos el cliente, los modelos se crean en las pestañas.
+        return client
     except Exception as e:
-        st.error(f"Error al iniciar el cliente Gemini o el modelo: {e}")
+        st.error(f"Error al iniciar el cliente Gemini: {e}")
         st.stop()
-
 
 # --- Configuración de Streamlit ---
 st.set_page_config(
