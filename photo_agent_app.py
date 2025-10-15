@@ -113,7 +113,7 @@ with tab1:
             image_data.save(save_path)
             st.success(f"Foto guardada exitosamente como **{filename}**.")
             
-# === PESTAÑA 2: SUBIR / DESCARGAR ARCHIVOS ===
+# === PESTAÑA 2: SUBIR / DESCARGAR ARCHIVOS (CORREGIDA) ===
 with tab2:
     st.header("Subir Archivos")
     uploaded_file = st.file_uploader(
@@ -130,6 +130,7 @@ with tab2:
     
     photo_files = get_photo_files()
     if photo_files:
+        # El selectbox ya tiene una clave implícita o una clave automática
         selected_file = st.selectbox("Selecciona un archivo para descargar", photo_files)
         
         if selected_file:
@@ -138,11 +139,11 @@ with tab2:
                 st.download_button(
                     label=f"Descargar {selected_file}",
                     data=file,
-                    file_name=selected_file
+                    file_name=selected_file,
+                    key=f"download_{selected_file}" # <--- ¡CLAVE ÚNICA AÑADIDA!
                 )
     else:
         st.info("No hay fotos guardadas para descargar.")
-
 # === PESTAÑA 3: FOTOS GUARDADAS ===
 with tab3:
     st.header("Visualizar Fotos Guardadas")
