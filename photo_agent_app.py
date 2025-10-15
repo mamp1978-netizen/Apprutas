@@ -1,3 +1,18 @@
+¡Absolutamente! Aquí tienes el código completo y final para tu archivo aplicacion de agente fotografico.py.
+
+He incorporado todas las correcciones necesarias:
+
+Inicialización de Gemini: Corregido el error de validación de Pydantic (ValidationError) al crear solo un modelo base y pasar la herramienta de Google Search en la llamada a generate_content en la Pestaña 5.
+
+Pestaña 2 (Descarga): Corregido el error de clave de elemento duplicado (StreamlitDuplicateElementKey) añadiendo una clave única al botón de descarga.
+
+Pestaña 4 (Chat): Corregida la lógica de la conversación para asegurar que la sesión de chat se maneje correctamente y el botón de reinicio funcione fuera del bucle de entrada de usuario.
+
+Simplemente reemplaza el contenido completo de tu archivo aplicacion de agente fotografico.py en GitHub con el siguiente código.
+
+Código Completo y Final: aplicacion de agente fotografico.py
+Python
+
 # aplicacion de agente fotografico.py
 from google import genai
 from google.genai.errors import APIError
@@ -56,7 +71,7 @@ if "client" not in st.session_state:
     st.session_state["model_base"] = st.session_state["client"].models.get(
         model="gemini-2.5-flash"
     )
-    # Nota: Eliminamos st.session_state["model_search"] para evitar el error de validación.
+    # Nota: Eliminamos la inicialización de un modelo con herramientas para evitar el error de validación.
     
 client = st.session_state["client"] 
 model_base = st.session_state["model_base"] # Hacemos el modelo base accesible
@@ -100,7 +115,7 @@ with tab1:
     if camera_file:
         st.image(camera_file, caption="Foto Capturada")
 
-        if st.button("Guardar esta foto"):
+        if st.button("Guardar esta foto", key="save_cam_photo"):
             from datetime import datetime 
             from PIL import Image 
             from io import BytesIO
@@ -122,7 +137,7 @@ with tab2:
     )
 
     if uploaded_file is not None:
-        if st.button(f"Guardar {uploaded_file.name}"):
+        if st.button(f"Guardar {uploaded_file.name}", key="save_uploaded_btn"):
             path = save_uploaded_file(uploaded_file)
             st.success(f"Archivo subido y guardado en: {path}")
 
@@ -130,8 +145,7 @@ with tab2:
     
     photo_files = get_photo_files()
     if photo_files:
-        # El selectbox ya tiene una clave implícita o una clave automática
-        selected_file = st.selectbox("Selecciona un archivo para descargar", photo_files)
+        selected_file = st.selectbox("Selecciona un archivo para descargar", photo_files, key="select_file_download")
         
         if selected_file:
             file_path = os.path.join(PHOTOS_DIR, selected_file)
@@ -140,99 +154,103 @@ with tab2:
                     label=f"Descargar {selected_file}",
                     data=file,
                     file_name=selected_file,
-                    key=f"download_{selected_file}" # <--- ¡CLAVE ÚNICA AÑADIDA!
+                    key=f"download_btn_{selected_file}" # <--- ¡CLAVE ÚNICA AÑADIDA!
                 )
     else:
         st.info("No hay fotos guardadas para descargar.")
+
 # === PESTAÑA 3: FOTOS GUARDADAS ===
 with tab3:
     st.header("Visualizar Fotos Guardadas")
     photo_files = get_photo_files()
     
     if photo_files:
-        selected_photo = st.selectbox("Elige una foto para visualizar", photo_files)
+        selected_photo = st.selectbox("Elige una foto para visualizar", photo_files, key="select_photo_view")
         
         if selected_photo:
             st.image(os.path.join(PHOTOS_DIR, selected_photo), caption=selected_photo, use_column_width=True)
             st.divider()
             
-            if st.button(f"🗑️ Eliminar {selected_photo}"):
+            if st.button(f"🗑️ Eliminar {selected_photo}", key=f"delete_btn_{selected_photo}"):
                 os.remove(os.path.join(PHOTOS_DIR, selected_photo))
                 st.success(f"Archivo **{selected_photo}** eliminado. (Recarga la página para actualizar la lista)")
+                st.rerun() # Opcional: Recarga inmediata para actualizar la lista
     else:
         st.info("La carpeta interna está vacía.")
         
-# === PESTAÑA 4: CHAT CON GEMINI ===
+# === PESTAÑA 4: CHAT CON GEMINI (FINALMENTE CORREGIDA) ===
 with tab4:
     st.header("Chat con Gemini ✨")
     st.markdown("Mantén una conversación continua con Gemini. ¡El historial se guarda!")
     
-    # --- Inicializar la sesión de chat y la historia ---
+    # --- 1. Inicializar la sesión de chat y la historia ---
     if "chat_session" not in st.session_state:
         try:
             # Creamos la sesión de chat usando el modelo base (sin herramientas)
             st.session_state["chat_session"] = client.chats.create(
-                model=model_base # <-- Usamos el nuevo modelo base
+                model=model_base 
             )
             st.session_state["messages"] = [{"role": "model", "content": "¡Hola! Soy Gemini. ¿En qué puedo ayudarte hoy?"}]
         except Exception as e:
             st.error(f"Error al iniciar la sesión de chat: {e}")
             st.stop()
 
-    # [El resto del código de la Pestaña 4 es idéntico a lo que tenías antes, solo asegúrate de que use 'chat_session']
-    # ...
-    # Mostrar historial de mensajes, capturar input, enviar a chat.send_message()
-    # ...
-    # Botón de reinicio
-    if st.button("Reiniciar Chat", key="reset_chat"):
-        st.session_state["chat_session"] = client.chats.create(
-            model=model_base # <-- Usamos el nuevo modelo base
-        )
-        st.session_state["messages"] = [{"role": "model", "content": "Chat Reiniciado. ¿En qué puedo ayudarte?"}]
-        st.rerun()
+
+    # --- 2. Mostrar historial de mensajes ---
+    for message in st.session_state["messages"]:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # --- 3. Capturar la entrada del usuario y procesar ---
+    if prompt := st.chat_input("Pregúntale algo a Gemini..."):
+        # A. Añadir prompt del usuario al historial y mostrarlo
+        st.session_state["messages"].append({"role": "user", "content": prompt})
         
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # --- Enviar a Gemini y obtener respuesta ---
+        # B. Enviar a Gemini y obtener respuesta
         with st.spinner("Gemini está pensando..."):
             try:
                 chat = st.session_state["chat_session"]
                 response = chat.send_message(prompt)
                 
+                # C. Añadir respuesta del modelo al historial y mostrarla
                 st.session_state["messages"].append({"role": "model", "content": response.text})
                 
-                with st.chat_message("model"):
-                    st.markdown(response.text)
+                # Forzar la reejecución para que el mensaje del modelo aparezca inmediatamente
+                st.rerun() 
 
             except Exception as e:
                 st.error(f"Error al conectar con Gemini: {e}")
                 st.session_state["messages"].append({"role": "model", "content": "Lo siento, hubo un error de conexión."})
                 
-    # --- Botón para limpiar el historial ---
+    # --- 4. Botón para limpiar el historial ---
     if st.button("Reiniciar Chat", key="reset_chat"):
+        # Creamos una nueva sesión de chat para borrar el contexto
         st.session_state["chat_session"] = client.chats.create(
-            model=model_chat
+            model=model_base
         )
         st.session_state["messages"] = [{"role": "model", "content": "Chat Reiniciado. ¿En qué puedo ayudarte?"}]
         st.rerun() 
         
-# === PESTAÑA 5: BUSCADOR WEB (¡AÑADIDO Y CORREGIDO!) ===
+# === PESTAÑA 5: BUSCADOR WEB (CORREGIDA) ===
 with tab5:
     st.header("Buscador Web 🌐")
     st.markdown("Usa la inteligencia de Gemini con acceso directo a Google Search.")
     
-    # 1. Obtener el modelo de base (el único que inicializamos)
-    # model_base es global, no necesitamos st.session_state aquí
+    # 1. Obtener el modelo de base
+    # model_base es global
     
     # 2. Campo de entrada para la consulta
     prompt = st.text_input(
         "¿Qué quieres buscar?",
-        placeholder="Ej: ¿Cuál es el último hallazgo en la medicina regenerativa?"
+        placeholder="Ej: ¿Cuál es el último hallazgo en la medicina regenerativa?",
+        key="search_prompt"
     )
     
     # 3. Botón de búsqueda
-    search_button = st.button("Buscar y Responder (Gemini + Google)")
+    search_button = st.button("Buscar y Responder (Gemini + Google)", key="search_button")
     
     # 4. Lógica de ejecución
     if search_button and prompt:
@@ -241,7 +259,7 @@ with tab5:
                 # Llama al modelo base PERO pasa la herramienta 'google_search' en la configuración de la llamada.
                 response = model_base.generate_content(
                     prompt, 
-                    config={"tools": [{"google_search": {}}]} # <-- La herramienta va aquí!
+                    config={"tools": [{"google_search": {}}]} # <-- La herramienta se pasa aquí
                 )
                 
                 # Muestra el resultado
@@ -257,7 +275,8 @@ def generate_maps_url(origin, stops, mode="driving"):
     """Genera una URL de Google Maps para direcciones con waypoints."""
     # Nota: El formato real de Google Maps para waypoints es más complejo,
     # pero simplificamos con un formato base para la demostración.
-    base_url = "https://www.google.com/maps/dir/" # Usamos la URL correcta
+    # Usamos una URL de ejemplo
+    base_url = "https://www.google.com/maps/dir/" 
     
     route_parts = [origin.replace(" ", "+")]
     for stop in stops:
@@ -300,11 +319,11 @@ with tab6:
 
     # Botones dinámicos
     with col_add:
-        if st.button("➕ Añadir Parada", disabled=len(st.session_state['stops']) >= 8):
+        if st.button("➕ Añadir Parada", key="add_stop_btn", disabled=len(st.session_state['stops']) >= 8):
             st.session_state['stops'].append("")
             st.rerun()
     with col_remove:
-        if st.button("➖ Eliminar Última", disabled=len(st.session_state['stops']) <= 1):
+        if st.button("➖ Eliminar Última", key="remove_stop_btn", disabled=len(st.session_state['stops']) <= 1):
             st.session_state['stops'].pop()
             st.rerun()
 
@@ -315,10 +334,11 @@ with tab6:
 
     travel_mode = st.radio(
         "Selecciona el modo de transporte:",
-        ["Conduciendo", "Transporte Público", "Caminando", "Bicicleta"]
+        ["Conduciendo", "Transporte Público", "Caminando", "Bicicleta"],
+        key="travel_mode_radio"
     )
 
-    if st.button(f"Generar Ruta: {travel_mode}"):
+    if st.button(f"Generar Ruta: {travel_mode}", key="generate_route_btn"):
         if not origin or not any(st.session_state['stops']):
             st.error("Por favor, introduce un punto de partida y al menos una parada válida.")
         else:
