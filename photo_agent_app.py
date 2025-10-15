@@ -163,33 +163,33 @@ with tab4:
     st.header("Chat con Gemini ✨")
     st.markdown("Mantén una conversación continua con Gemini. ¡El historial se guarda!")
 
-    # --- Inicializar Cliente y Modelo (NUEVO: Usando la función get_gemini_client) ---
-    if "client" not in st.session_state or "model" not in st.session_state:
-        st.session_state["client"], st.session_state["model"] = get_gemini_client()
+    # --- 1. Inicializar Cliente y Modelo ---
+    # Usamos la función get_gemini_client() para garantizar que el cliente esté disponible
+    if "client" not in st.session_state:
+        st.session_state["client"], st.session_state["model_search"] = get_gemini_client()
         
     client = st.session_state["client"]
-    model = st.session_state["model"]
 
-    # --- 1. Inicializar la sesión de chat y la historia ---
+    # --- 2. Inicializar la sesión de chat y la historia ---
     if "chat_session" not in st.session_state:
         try:
-            # Crear la sesión de chat. El modelo se define SIN herramientas para el chat general.
+            # Crear la sesión de chat. **IMPORTANTE: Sin la herramienta de búsqueda.**
             st.session_state["chat_session"] = client.chats.create(
                 model="gemini-2.5-flash" 
             )
             st.session_state["messages"] = [{"role": "model", "content": "¡Hola! Soy Gemini. ¿En qué puedo ayudarte hoy?"}]
         except Exception as e:
+            # Este error ocurre si la clave API falla, pero ya lo habías resuelto.
             st.error(f"Error al iniciar el cliente Gemini: {e}")
             st.stop()
 
 
-    # --- 2. Mostrar historial de mensajes ---
-    # La variable 'messages' guarda toda la conversación
+    # --- 3. Mostrar historial de mensajes ---
     for message in st.session_state["messages"]:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # --- 3. Capturar la entrada del usuario ---
+    # --- 4. Capturar la entrada del usuario ---
     if prompt := st.chat_input("Pregúntale algo a Gemini..."):
         # Añadir prompt del usuario al historial y mostrarlo
         st.session_state["messages"].append({"role": "user", "content": prompt})
@@ -197,7 +197,7 @@ with tab4:
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # --- 4. Enviar a Gemini y obtener respuesta ---
+        # --- 5. Enviar a Gemini y obtener respuesta ---
         with st.spinner("Gemini está pensando..."):
             try:
                 # Usar la sesión de chat guardada para mantener el contexto
@@ -214,14 +214,14 @@ with tab4:
                 st.error(f"Error al conectar con Gemini: {e}")
                 st.session_state["messages"].append({"role": "model", "content": "Lo siento, hubo un error de conexión."})
                 
-    # --- 5. Botón para limpiar el historial ---
+    # --- 6. Botón para limpiar el historial ---
     if st.button("Reiniciar Chat", key="reset_chat"):
         # Creamos una nueva sesión de chat para borrar el contexto
         st.session_state["chat_session"] = client.chats.create(
             model="gemini-2.5-flash"
         )
         st.session_state["messages"] = [{"role": "model", "content": "Chat Reiniciado. ¿En qué puedo ayudarte?"}]
-        st.rerun() # Reinicia la ejecución del script para actualizar la interfaz
+        st.rerun() 
         
 # ------------------------------------------------------------
 # === PESTAÑA 5: BUSCADOR WEB (¡AÑADIDO!) ===
