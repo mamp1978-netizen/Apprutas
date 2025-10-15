@@ -1,4 +1,4 @@
-# photo_agent_app.py
+# aplicacion de agente fotografico.py
 from google import genai
 from google.genai.errors import APIError
 import streamlit as st
@@ -16,23 +16,24 @@ PHOTOS_DIR = os.path.join(APP_DIR, "app_photos_saved")
 os.makedirs(PHOTOS_DIR, exist_ok=True)
 
 # ----------------------------------------------------
-# --- CONFIGURACIÓN DE GEMINI Y HERRAMIENTAS (NUEVO) ---
+# --- CONFIGURACIÓN DE GEMINI (FUNCIÓN DE CLIENTE) ---
 # ----------------------------------------------------
 def get_gemini_client():
     """Inicializa el cliente Gemini y verifica la clave API."""
+    # Intentamos obtener la clave API de Streamlit Secrets (o entorno)
     gemini_key = os.environ.get("GEMINI_API_KEY")
     if not gemini_key:
-        # El mensaje de error personalizado ya no es necesario si la clave funciona
-        st.error("Error: La clave GEMINI_API_KEY no está configurada. Por favor, añádela en los Secrets de Streamlit Cloud.")
+        st.error("Error: La clave GEMINI_API_KEY no está configurada.")
         st.stop()
     
     try:
+        # Solo inicializa el cliente
         client = genai.Client(api_key=gemini_key)
-        # Solo devolvemos el cliente, los modelos se crean en las pestañas.
-        return client
+        return client 
     except Exception as e:
         st.error(f"Error al iniciar el cliente Gemini: {e}")
         st.stop()
+
 
 # --- Configuración de Streamlit ---
 st.set_page_config(
@@ -43,6 +44,26 @@ st.set_page_config(
 st.title("📸 Gestor de Fotos y Archivos (Streamlit)")
 st.markdown("Sube y descarga fotos, o usa la cámara web directamente.")
 st.divider()
+
+# --------------------------------------------------------
+# --- INICIALIZACIÓN GLOBAL DE GEMINI Y MODELOS (CLAVE) ---
+# --------------------------------------------------------
+if "client" not in st.session_state:
+    st.session_state["client"] = get_gemini_client()
+    
+    # 1. Modelo para CHAT (Sin herramientas)
+    st.session_state["model_chat"] = st.session_state["client"].models.get(
+        model="gemini-2.5-flash"
+    )
+    
+    # 2. Modelo para BUSCADOR WEB (Con herramienta de Google Search)
+    st.session_state["model_search"] = st.session_state["client"].models.get(
+        model="gemini-2.5-flash",
+        config={"tools": [{"google_search": {}}]}
+    )
+# Hacemos el cliente accesible en todo el script
+client = st.session_state["client"] 
+
 
 # --- Funciones de Utilidad ---
 def save_uploaded_file(uploaded_file):
@@ -77,26 +98,19 @@ with tab1:
     col_camera, col_spacer = st.columns([1, 2]) 
 
     with col_camera:
-        # Componente nativo de Streamlit para la cámara (Ahora más pequeño)
         camera_file = st.camera_input("Apunta y captura")
 
-    # ----------------------------------------------------
-    # La lógica de guardar la foto va justo DESPUÉS de las columnas
-    # ----------------------------------------------------
     if camera_file:
-        # 1. Muestra la foto capturada
         st.image(camera_file, caption="Foto Capturada")
 
-        # 2. Permite al usuario guardar la foto
         if st.button("Guardar esta foto"):
-            from datetime import datetime # Importamos aquí si no está al inicio
-            from PIL import Image # Aseguramos el import de PIL
+            from datetime import datetime 
+            from PIL import Image 
             from io import BytesIO
             
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"cam_{timestamp}.jpg"
 
-            # Guarda el archivo en la carpeta interna
             image_data = Image.open(BytesIO(camera_file.read()))
             save_path = os.path.join(PHOTOS_DIR, filename)
             image_data.save(save_path)
@@ -117,7 +131,6 @@ with tab2:
 
     st.header("Descargar Archivos")
     
-    # Obtiene la lista de archivos para descargar
     photo_files = get_photo_files()
     if photo_files:
         selected_file = st.selectbox("Selecciona un archivo para descargar", photo_files)
@@ -145,12 +158,9 @@ with tab3:
             st.image(os.path.join(PHOTOS_DIR, selected_photo), caption=selected_photo, use_column_width=True)
             st.divider()
             
-            # Opción para eliminar el archivo
             if st.button(f"🗑️ Eliminar {selected_photo}"):
                 os.remove(os.path.join(PHOTOS_DIR, selected_photo))
                 st.success(f"Archivo **{selected_photo}** eliminado. (Recarga la página para actualizar la lista)")
-                # Recarga la página para mostrar el cambio
-                # Es posible que necesites recargar manualmente si st.rerun no funciona en tu versión de Streamlit
     else:
         st.info("La carpeta interna está vacía.")
         
@@ -158,48 +168,41 @@ with tab3:
 with tab4:
     st.header("Chat con Gemini ✨")
     st.markdown("Mantén una conversación continua con Gemini. ¡El historial se guarda!")
+    
+    # 1. Obtener el modelo de chat
+    model_chat = st.session_state["model_chat"]
 
-    # --- 1. Inicializar Cliente (Ya debe estar en st.session_state desde get_gemini_client) ---
-    if "client" not in st.session_state:
-        # Si por alguna razón el cliente no está, lo inicializamos (esto llama a get_gemini_client)
-        st.session_state["client"], st.session_state["model_search"] = get_gemini_client()
-        
-    client = st.session_state["client"] # Obtenemos el cliente
-
-    # --- 2. Inicializar la sesión de chat y la historia ---
+    # --- Inicializar la sesión de chat y la historia ---
     if "chat_session" not in st.session_state:
         try:
-            # Creamos la sesión de chat con el modelo conversacional (sin herramientas)
+            # Creamos la sesión de chat usando el modelo sin herramientas (model_chat)
             st.session_state["chat_session"] = client.chats.create(
-                model="gemini-2.5-flash" 
+                model=model_chat
             )
             st.session_state["messages"] = [{"role": "model", "content": "¡Hola! Soy Gemini. ¿En qué puedo ayudarte hoy?"}]
         except Exception as e:
-            st.error(f"Error al iniciar el cliente Gemini: {e}")
+            st.error(f"Error al iniciar la sesión de chat: {e}")
             st.stop()
 
 
-    # --- 3. Mostrar historial de mensajes ---
+    # --- Mostrar historial de mensajes ---
     for message in st.session_state["messages"]:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # --- 4. Capturar la entrada del usuario ---
+    # --- Capturar la entrada del usuario ---
     if prompt := st.chat_input("Pregúntale algo a Gemini..."):
-        # Añadir prompt del usuario al historial y mostrarlo
         st.session_state["messages"].append({"role": "user", "content": prompt})
         
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # --- 5. Enviar a Gemini y obtener respuesta ---
+        # --- Enviar a Gemini y obtener respuesta ---
         with st.spinner("Gemini está pensando..."):
             try:
-                # Usar la sesión de chat guardada para mantener el contexto
                 chat = st.session_state["chat_session"]
                 response = chat.send_message(prompt)
                 
-                # Añadir respuesta del modelo al historial y mostrarla
                 st.session_state["messages"].append({"role": "model", "content": response.text})
                 
                 with st.chat_message("model"):
@@ -209,31 +212,26 @@ with tab4:
                 st.error(f"Error al conectar con Gemini: {e}")
                 st.session_state["messages"].append({"role": "model", "content": "Lo siento, hubo un error de conexión."})
                 
-    # --- 6. Botón para limpiar el historial ---
+    # --- Botón para limpiar el historial ---
     if st.button("Reiniciar Chat", key="reset_chat"):
-        # Creamos una nueva sesión de chat para borrar el contexto
         st.session_state["chat_session"] = client.chats.create(
-            model="gemini-2.5-flash"
+            model=model_chat
         )
         st.session_state["messages"] = [{"role": "model", "content": "Chat Reiniciado. ¿En qué puedo ayudarte?"}]
-        st.rerun()        
-# ------------------------------------------------------------
-# === PESTAÑA 5: BUSCADOR WEB (¡AÑADIDO!) ===
-# ------------------------------------------------------------
+        st.rerun() 
+        
+# === PESTAÑA 5: BUSCADOR WEB (¡AÑADIDO Y CORREGIDO!) ===
 with tab5:
     st.header("Buscador Web 🌐")
     st.markdown("Usa la inteligencia de Gemini con acceso directo a Google Search.")
     
-    # 1. Inicializar Cliente y Modelo (Con Herramientas)
-    if "client" not in st.session_state or "model" not in st.session_state:
-        st.session_state["client"], st.session_state["model"] = get_gemini_client()
-        
-    model = st.session_state["model"] # Este modelo ya tiene la herramienta de búsqueda activada
+    # 1. Obtener el modelo de búsqueda (ya configurado con la herramienta)
+    model_search = st.session_state["model_search"] 
 
     # 2. Campo de entrada para la consulta
     prompt = st.text_input(
         "¿Qué quieres buscar?",
-        placeholder="Ej: ¿Quién ganó el último premio Nobel de física y por qué?"
+        placeholder="Ej: ¿Cuál es el último hallazgo en la medicina regenerativa?"
     )
     
     # 3. Botón de búsqueda
@@ -244,7 +242,7 @@ with tab5:
         with st.spinner(f"Buscando en Google y generando respuesta para '{prompt}'..."):
             try:
                 # Llama al modelo que tiene la herramienta 'google_search' activada.
-                response = model.generate_content(prompt)
+                response = model_search.generate_content(prompt)
                 
                 # Muestra el resultado
                 st.subheader("Resultado de la Búsqueda:")
@@ -253,29 +251,20 @@ with tab5:
             except Exception as e:
                 st.error(f"Error al ejecutar la búsqueda con Gemini: {e}")
                 
-# ------------------------------------------------------------
-# === FIN DE LA PESTAÑA 5 ===
-# ------------------------------------------------------------
-
 
 # === PESTAÑA 6: PLANIFICADOR DE RUTA ===
 def generate_maps_url(origin, stops, mode="driving"):
     """Genera una URL de Google Maps para direcciones con waypoints."""
     # Nota: El formato real de Google Maps para waypoints es más complejo,
     # pero simplificamos con un formato base para la demostración.
-    base_url = "https://www.google.com/maps/dir/"
-
-    # 1. Punto de Origen
+    base_url = "https://www.google.com/maps/dir/" # Usamos la URL correcta
+    
     route_parts = [origin.replace(" ", "+")]
-
-    # 2. Puntos de Parada (Waypoints) y Destino (El último)
     for stop in stops:
         route_parts.append(stop.replace(" ", "+"))
 
-    # Unir todos los puntos
     route_string = "/".join(route_parts)
 
-    # Añadir modo de transporte (Simplificado)
     travel_mode_code = {
         "Conduciendo": "driving",
         "Caminando": "walking",
@@ -283,7 +272,7 @@ def generate_maps_url(origin, stops, mode="driving"):
         "Transporte Público": "transit"
     }.get(mode, "driving")
     
-    # Usamos el parámetro de modo en la URL
+    # Devolvemos una URL completa con el modo de viaje.
     return f"{base_url}{route_string}/data=!4m2!4m1!3e{travel_mode_code}"
 
 
@@ -297,7 +286,6 @@ with tab6:
     # Campos de puntos de interés (Waypoints)
     st.subheader("2. Puntos de Visita (Waypoints)")
 
-    # Usamos st.session_state para gestionar una lista dinámica de paradas
     if 'stops' not in st.session_state:
         st.session_state['stops'] = ["Eiffel Tower, Paris", "Louvre Museum, Paris"]
 
@@ -331,27 +319,22 @@ with tab6:
     )
 
     if st.button(f"Generar Ruta: {travel_mode}"):
-        # Asegurarse de que el origen no esté vacío y haya al menos un destino
         if not origin or not any(st.session_state['stops']):
             st.error("Por favor, introduce un punto de partida y al menos una parada válida.")
         else:
-            # Filtrar paradas vacías si el usuario no las usó
             valid_stops = [stop for stop in st.session_state['stops'] if stop.strip()]
 
             if not valid_stops:
                 st.warning("Debes especificar al menos un destino.")
             else:
-                # Generar la URL
                 maps_url = generate_maps_url(origin, valid_stops, travel_mode)
 
                 st.success(f"Ruta generada para {travel_mode}!")
 
-                # Mostrar la información y el enlace directo
                 st.info("La ruta se planificará en Google Maps.")
                 st.markdown(f"### [▶️ Abrir Ruta en Google Maps]({maps_url})")
                 st.markdown("---")
 
-                # Opcional: Sugerencia de itinerarios con Gemini
                 st.subheader("💡 Ideas y Planificación Inteligente con Gemini")
                 st.info("¿Quieres optimizar la ruta o crear un itinerario turístico completo?")
                 st.markdown(
