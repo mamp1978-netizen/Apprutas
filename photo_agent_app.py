@@ -163,23 +163,22 @@ with tab4:
     st.header("Chat con Gemini ✨")
     st.markdown("Mantén una conversación continua con Gemini. ¡El historial se guarda!")
 
-    # --- 1. Inicializar Cliente y Modelo ---
-    # Usamos la función get_gemini_client() para garantizar que el cliente esté disponible
+    # --- 1. Inicializar Cliente (Ya debe estar en st.session_state desde get_gemini_client) ---
     if "client" not in st.session_state:
+        # Si por alguna razón el cliente no está, lo inicializamos (esto llama a get_gemini_client)
         st.session_state["client"], st.session_state["model_search"] = get_gemini_client()
         
-    client = st.session_state["client"]
+    client = st.session_state["client"] # Obtenemos el cliente
 
     # --- 2. Inicializar la sesión de chat y la historia ---
     if "chat_session" not in st.session_state:
         try:
-            # Crear la sesión de chat. **IMPORTANTE: Sin la herramienta de búsqueda.**
+            # Creamos la sesión de chat con el modelo conversacional (sin herramientas)
             st.session_state["chat_session"] = client.chats.create(
                 model="gemini-2.5-flash" 
             )
             st.session_state["messages"] = [{"role": "model", "content": "¡Hola! Soy Gemini. ¿En qué puedo ayudarte hoy?"}]
         except Exception as e:
-            # Este error ocurre si la clave API falla, pero ya lo habías resuelto.
             st.error(f"Error al iniciar el cliente Gemini: {e}")
             st.stop()
 
@@ -221,8 +220,7 @@ with tab4:
             model="gemini-2.5-flash"
         )
         st.session_state["messages"] = [{"role": "model", "content": "Chat Reiniciado. ¿En qué puedo ayudarte?"}]
-        st.rerun() 
-        
+        st.rerun()        
 # ------------------------------------------------------------
 # === PESTAÑA 5: BUSCADOR WEB (¡AÑADIDO!) ===
 # ------------------------------------------------------------
