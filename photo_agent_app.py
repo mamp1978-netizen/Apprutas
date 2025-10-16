@@ -6,6 +6,12 @@ from datetime import datetime
 import qrcode
 import streamlit as st
 import streamlit.components.v1 as components
+from dotenv import load_dotenv
+import os
+
+# Cargar variables de entorno
+load_dotenv()
+SERPAPI_KEY = os.getenv("509069584263d87bb53b7a37a256e6bf14ba088c0db5531f0d87efbca9875732")
 
 # =========================
 # Configuración + estilos
