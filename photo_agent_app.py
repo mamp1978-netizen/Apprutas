@@ -2,16 +2,20 @@
 from urllib.parse import quote_plus
 from io import BytesIO
 from datetime import datetime
+import os
 
 import qrcode
 import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
-import os
 
-# Cargar variables de entorno
+# =========================
+# Variables de entorno
+# =========================
+# Si usas Codespaces/Streamlit Cloud: define el Secret SERPAPI_KEY allí.
+# Si usas .env local: crea un archivo .env con SERPAPI_KEY="tu_clave"
 load_dotenv()
-SERPAPI_KEY = os.getenv("509069584263d87bb53b7a37a256e6bf14ba088c0db5531f0d87efbca9875732")
+SERPAPI_KEY = os.getenv("SERPAPI_KEY")  # <-- CORRECTO (antes estaba mal)
 
 # =========================
 # Configuración + estilos
@@ -45,23 +49,28 @@ button[kind="secondary"]{
 # Utilidades
 # =========================
 def generate_maps_url(origin: str, stops: list[str], mode_label: str = "Conduciendo") -> str:
-    if not origin or not stops: return ""
+    if not origin or not stops:
+        return ""
     origin_q = quote_plus(origin.strip())
     cleaned = [s.strip() for s in stops if s and s.strip()]
-    if not cleaned: return ""
+    if not cleaned:
+        return ""
     destination_q = quote_plus(cleaned[-1])
     waypoints_q = "|".join(quote_plus(s) for s in cleaned[:-1])
     mode_map = {"Conduciendo":"driving","Caminando":"walking","Bicicleta":"bicycling","Transporte Público":"transit",
                 "driving":"driving","walking":"walking","bicycling":"bicycling","transit":"transit"}
     travel = mode_map.get(mode_label, "driving")
     url = f"https://www.google.com/maps/dir/?api=1&origin={origin_q}&destination={destination_q}"
-    if waypoints_q: url += f"&waypoints={waypoints_q}"
+    if waypoints_q:
+        url += f"&waypoints={waypoints_q}"
     url += f"&travelmode={travel}"
     return url
 
 def show_qr_for(url: str):
-    if not url: return
-    buf = BytesIO(); qrcode.make(url).save(buf, format="PNG")
+    if not url:
+        return
+    buf = BytesIO()
+    qrcode.make(url).save(buf, format="PNG")
     st.image(buf.getvalue(), caption="Escanéalo para abrir la ruta", use_column_width=False)
     st.download_button("⬇️ Descargar QR (PNG)", buf.getvalue(),
                        f"ruta_{datetime.now().strftime('%Y%m%d_%H%M')}.png", "image/png")
@@ -104,9 +113,12 @@ function getLoc(){{
 # =========================
 # Estado
 # =========================
-if "stops_prof" not in st.session_state: st.session_state.stops_prof = ["Cliente 1, Barcelona", "Cliente 2, Barcelona"]
-if "stops_trip" not in st.session_state: st.session_state.stops_trip = ["Eiffel Tower, Paris", "Louvre Museum, Paris"]
-if "stops_tour" not in st.session_state: st.session_state.stops_tour = ["Sagrada Família", "Parc Güell", "Casa Batlló"]
+if "stops_prof" not in st.session_state:
+    st.session_state.stops_prof = ["Cliente 1, Barcelona", "Cliente 2, Barcelona"]
+if "stops_trip" not in st.session_state:
+    st.session_state.stops_trip = ["Eiffel Tower, Paris", "Louvre Museum, Paris"]
+if "stops_tour" not in st.session_state:
+    st.session_state.stops_tour = ["Sagrada Família", "Parc Güell", "Casa Batlló"]
 
 # =========================
 # Cabecera y Pestañas
@@ -122,7 +134,6 @@ with tab1:
     st.subheader("Ruta de trabajo")
     st.markdown('<span class="badge">Jornada</span> Planifica visitas a clientes, obras o inspecciones.', unsafe_allow_html=True)
 
-    # Origen (estructurado opcional: País + Calle + Nº)
     colA, colB, colC = st.columns([2,2,1])
     with colA:
         pais_prof = st.text_input("País", placeholder="Ej.: España")
@@ -133,12 +144,12 @@ with tab1:
     origin_prof = " ".join([s for s in [pais_prof, calle_prof, num_prof] if s]).strip()
     location_button_for("País")
 
-    # Paradas
     st.markdown("**Paradas**")
     new_stops = []
     for i, stop in enumerate(st.session_state.stops_prof):
         new_stops.append(st.text_input(f"Parada #{i+1}", value=stop, key=f"prof_stop_{i}"))
     st.session_state.stops_prof = new_stops
+
     col1, col2, _ = st.columns([1,1,4])
     with col1:
         st.button("➕ Añadir", key="prof_add", type="secondary",
@@ -146,7 +157,7 @@ with tab1:
     with col2:
         st.button("➖ Quitar última", key="prof_rm", type="secondary",
                   on_click=lambda: st.session_state.stops_prof.pop() if st.session_state.stops_prof else None,
-                  disabled=len(st.session_state.stops_prof)<=1)
+                  disabled=len(st.session_state.stops_prof) <= 1)
 
     mode_prof = st.radio("Modo", ["Conduciendo","Transporte Público","Caminando","Bicicleta"], horizontal=True, key="mode_prof")
     if st.button("Generar ruta (Profesional)"):
@@ -173,7 +184,6 @@ with tab2:
     origin_trip = st.text_input("Punto de partida", placeholder="Ej.: Aeropuerto de Barcelona")
     location_button_for("Punto de partida")
 
-    # Textarea para paradas
     lista = st.text_area("Paradas", value="\n".join(st.session_state.stops_trip), height=120)
     if st.button("Aplicar lista"):
         st.session_state.stops_trip = [s.strip() for s in lista.splitlines() if s.strip()]
@@ -208,9 +218,8 @@ with tab3:
     origin_tour = st.text_input("Ciudad o ubicación", placeholder="Ej.: Barcelona, España")
     location_button_for("Ciudad o ubicación")
 
-    # Radio de acción (preparado para futura integración con Places/OSM)
     radius_km = st.slider("Radio de acción (km)", 1, 30, 10)
-    st.caption("Más adelante conectaremos con Google Places u OpenStreetMap para sugerencias reales.")
+    st.caption("Más adelante conectaremos con Google Places / SerpApi para sugerencias reales.")
 
     chosen = st.multiselect("Elige lugares", st.session_state.stops_tour, default=st.session_state.stops_tour[:2])
     mode_tour = st.radio("Modo", ["Conduciendo","Transporte Público","Caminando","Bicicleta"], horizontal=True, key="mode_tour")
