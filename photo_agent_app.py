@@ -3,6 +3,8 @@ from urllib.parse import quote_plus
 from io import BytesIO
 from datetime import datetime
 import os
+import re
+import requests
 
 import qrcode
 import streamlit as st
@@ -12,10 +14,10 @@ from dotenv import load_dotenv
 # =========================
 # Variables de entorno
 # =========================
-# Si usas Codespaces/Streamlit Cloud: define el Secret SERPAPI_KEY allí.
-# Si usas .env local: crea un archivo .env con SERPAPI_KEY="tu_clave"
+# En Codespaces/Streamlit Cloud: define el Secret SERPAPI_KEY allí.
+# En local: crea .env con SERPAPI_KEY="tu_clave"
 load_dotenv()
-SERPAPI_KEY = os.getenv("SERPAPI_KEY")  # <-- CORRECTO (antes estaba mal)
+SERPAPI_KEY = os.getenv("SERPAPI_KEY")  # <-- necesaria para comprobación de horarios
 
 # =========================
 # Configuración + estilos
@@ -46,7 +48,7 @@ button[kind="secondary"]{
 """, unsafe_allow_html=True)
 
 # =========================
-# Utilidades
+# Utilidades de rutas / QR
 # =========================
 def generate_maps_url(origin: str, stops: list[str], mode_label: str = "Conduciendo") -> str:
     if not origin or not stops:
@@ -75,6 +77,93 @@ def show_qr_for(url: str):
     st.download_button("⬇️ Descargar QR (PNG)", buf.getvalue(),
                        f"ruta_{datetime.now().strftime('%Y%m%d_%H%M')}.png", "image/png")
 
+# =========================
+# Utilidades SerpApi (horarios)
+# =========================
+def _parse_latlon(text: str):
+    """Devuelve (lat, lon) si el origen es 'lat, lon'; si no, None."""
+    if not text:
+        return None
+    m = re.match(r'\s*(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)\s*', text)
+    if m:
+        return float(m.group(1)), float(m.group(3))
+    return None
+
+def serpapi_search_place(query: str, origin_text: str = "", lang: str = "es"):
+    """
+    Busca un lugar en Google Maps vía SerpApi y devuelve el primer resultado relevante.
+    Usa coordenadas si el origen viene como 'lat, lon' para sesgar la búsqueda.
+    """
+    if not SERPAPI_KEY:
+        return {"error": "Falta SERPAPI_KEY"}
+    params = {
+        "engine": "google_maps",
+        "q": query,
+        "hl": lang,
+        "api_key": SERPAPI_KEY,
+    }
+    coords = _parse_latlon(origin_text)
+    if coords:
+        lat, lon = coords
+        params["ll"] = f"@{lat},{lon},14z"
+    try:
+        r = requests.get("https://serpapi.com/search.json", params=params, timeout=20)
+        if r.status_code != 200:
+            return {"error": f"HTTP {r.status_code}"}
+        data = r.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+    # SerpApi puede devolver 'place_results' o 'local_results'
+    if "place_results" in data and isinstance(data["place_results"], dict):
+        return data["place_results"]
+    if "local_results" in data and data["local_results"]:
+        return data["local_results"][0]
+    return {}
+
+def extract_open_now(place: dict):
+    """
+    Intenta decidir si está abierto ahora. Devuelve (estado, detalle).
+    Revisa campos: 'opening_hours', 'hours', 'open_state', 'status', 'open_now'.
+    """
+    if not place or (isinstance(place, dict) and place.get("error")):
+        return ("desconocido", "Sin datos de horario")
+
+    text_fields = []
+    for k in ("opening_hours", "hours", "open_state", "status"):
+        v = place.get(k)
+        if isinstance(v, str):
+            text_fields.append(v)
+    text = " | ".join(text_fields).lower()
+
+    if any(x in text for x in ["abierto ahora", "open ⋅", "open now", "abierto"]):
+        return ("abierto", text_fields[0] if text_fields else "Abierto ahora")
+    if any(x in text for x in ["cerrado", "closed"]):
+        return ("cerrado", text_fields[0] if text_fields else "Cerrado")
+
+    if place.get("open_now") is True:
+        return ("abierto", "Abierto ahora")
+    if place.get("open_now") is False:
+        return ("cerrado", "Cerrado")
+
+    return ("desconocido", "Horario no disponible")
+
+def check_open_status_for_list(origin_text: str, stops: list[str], lang: str = "es"):
+    """
+    Consulta SerpApi para cada parada y devuelve lista de (nombre, dirección, estado, detalle).
+    """
+    resultados = []
+    for stop in stops:
+        place = serpapi_search_place(stop, origin_text, lang=lang)
+        nombre = place.get("title") or place.get("name") or stop
+        direccion = place.get("address") or place.get("description") or ""
+        estado, detalle = extract_open_now(place)
+        resultados.append((nombre, direccion, estado, detalle))
+    return resultados
+
+# =========================
+# UI helpers
+# =========================
 def location_button_for(label_text: str):
     """Botón 'Usar mi ubicación' que rellena el input (lat, lon)."""
     components.html(f"""
@@ -111,7 +200,7 @@ function getLoc(){{
 """, height=80)
 
 # =========================
-# Estado
+# Estado inicial
 # =========================
 if "stops_prof" not in st.session_state:
     st.session_state.stops_prof = ["Cliente 1, Barcelona", "Cliente 2, Barcelona"]
@@ -150,7 +239,7 @@ with tab1:
         new_stops.append(st.text_input(f"Parada #{i+1}", value=stop, key=f"prof_stop_{i}"))
     st.session_state.stops_prof = new_stops
 
-    col1, col2, _ = st.columns([1,1,4])
+    col1, col2, col3, _ = st.columns([1.2, 1.6, 2, 3])
     with col1:
         st.button("➕ Añadir", key="prof_add", type="secondary",
                   on_click=lambda: st.session_state.stops_prof.append(""))
@@ -158,6 +247,29 @@ with tab1:
         st.button("➖ Quitar última", key="prof_rm", type="secondary",
                   on_click=lambda: st.session_state.stops_prof.pop() if st.session_state.stops_prof else None,
                   disabled=len(st.session_state.stops_prof) <= 1)
+    with col3:
+        check_prof = st.button("🔔 Comprobar horarios (beta)")
+
+    if check_prof:
+        if not SERPAPI_KEY:
+            st.error("No está configurado SERPAPI_KEY. Añádelo en Secrets o .env.")
+        else:
+            valid = [s.strip() for s in st.session_state.stops_prof if s.strip()]
+            if not valid:
+                st.info("Añade paradas primero.")
+            else:
+                resultados = check_open_status_for_list(origin_prof, valid)
+                hay_cerrados = False
+                for nombre, direccion, estado, detalle in resultados:
+                    if estado == "abierto":
+                        st.success(f"✅ {nombre} — {detalle}\n\n{direccion}")
+                    elif estado == "cerrado":
+                        hay_cerrados = True
+                        st.warning(f"⚠️ {nombre} — {detalle}\n\n{direccion}")
+                    else:
+                        st.info(f"ℹ️ {nombre} — {detalle}\n\n{direccion}")
+                if hay_cerrados:
+                    st.error("Algunas paradas están *cerradas ahora*. Ajusta ruta u horario.")
 
     mode_prof = st.radio("Modo", ["Conduciendo","Transporte Público","Caminando","Bicicleta"], horizontal=True, key="mode_prof")
     if st.button("Generar ruta (Profesional)"):
@@ -188,11 +300,34 @@ with tab2:
     if st.button("Aplicar lista"):
         st.session_state.stops_trip = [s.strip() for s in lista.splitlines() if s.strip()]
 
-    col1, col2 = st.columns([1,1])
+    col1, col2, col3 = st.columns([1.2, 1.6, 2])
     with col1:
         mode_trip = st.selectbox("Modo", ["Conduciendo","Transporte Público","Caminando","Bicicleta"])
     with col2:
         go_trip = st.button("Generar ruta (Viajero)")
+    with col3:
+        check_trip = st.button("🔔 Comprobar horarios (beta) — Viajero")
+
+    if check_trip:
+        if not SERPAPI_KEY:
+            st.error("No está configurado SERPAPI_KEY. Añádelo en Secrets o .env.")
+        else:
+            valid = [s.strip() for s in st.session_state.stops_trip if s.strip()]
+            if not valid:
+                st.info("Añade paradas primero.")
+            else:
+                resultados = check_open_status_for_list(origin_trip, valid)
+                hay_cerrados = False
+                for nombre, direccion, estado, detalle in resultados:
+                    if estado == "abierto":
+                        st.success(f"✅ {nombre} — {detalle}\n\n{direccion}")
+                    elif estado == "cerrado":
+                        hay_cerrados = True
+                        st.warning(f"⚠️ {nombre} — {detalle}\n\n{direccion}")
+                    else:
+                        st.info(f"ℹ️ {nombre} — {detalle}\n\n{direccion}")
+                if hay_cerrados:
+                    st.error("Algunas paradas están *cerradas ahora*. Ajusta ruta u horario.")
 
     if go_trip:
         valid = [s.strip() for s in st.session_state.stops_trip if s.strip()]
@@ -219,12 +354,41 @@ with tab3:
     location_button_for("Ciudad o ubicación")
 
     radius_km = st.slider("Radio de acción (km)", 1, 30, 10)
-    st.caption("Más adelante conectaremos con Google Places / SerpApi para sugerencias reales.")
+    st.caption("Más adelante conectaremos con búsqueda automática por radio. Por ahora, selecciona lugares de la lista.")
 
     chosen = st.multiselect("Elige lugares", st.session_state.stops_tour, default=st.session_state.stops_tour[:2])
-    mode_tour = st.radio("Modo", ["Conduciendo","Transporte Público","Caminando","Bicicleta"], horizontal=True, key="mode_tour")
 
-    if st.button("Generar ruta (Turístico)"):
+    col1, col2, col3 = st.columns([1.2, 1.6, 2])
+    with col1:
+        mode_tour = st.radio("Modo", ["Conduciendo","Transporte Público","Caminando","Bicicleta"],
+                             horizontal=True, key="mode_tour")
+    with col2:
+        go_tour = st.button("Generar ruta (Turístico)")
+    with col3:
+        check_tour = st.button("🔔 Comprobar horarios (beta) — Turístico")
+
+    if check_tour:
+        if not SERPAPI_KEY:
+            st.error("No está configurado SERPAPI_KEY. Añádelo en Secrets o .env.")
+        else:
+            valid = [s.strip() for s in chosen if s.strip()]
+            if not valid:
+                st.info("Selecciona lugares primero.")
+            else:
+                resultados = check_open_status_for_list(origin_tour, valid)
+                hay_cerrados = False
+                for nombre, direccion, estado, detalle in resultados:
+                    if estado == "abierto":
+                        st.success(f"✅ {nombre} — {detalle}\n\n{direccion}")
+                    elif estado == "cerrado":
+                        hay_cerrados = True
+                        st.warning(f"⚠️ {nombre} — {detalle}\n\n{direccion}")
+                    else:
+                        st.info(f"ℹ️ {nombre} — {detalle}\n\n{direccion}")
+                if hay_cerrados:
+                    st.error("Algunos lugares están *cerrados ahora*. Ajusta ruta u horario.")
+
+    if go_tour:
         valid = [s.strip() for s in chosen if s.strip()]
         if not origin_tour:
             st.error("Introduce una ciudad/ubicación o usa 🎯.")
