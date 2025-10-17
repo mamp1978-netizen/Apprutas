@@ -1,6 +1,11 @@
 import streamlit as st
 import requests
-from app_utils import address_input, resolve_selection, build_gmaps_url, make_qr
+import os
+from urllib.parse import quote_plus
+from app_utils import resolve_selection, build_gmaps_url, make_qr
+
+# --------------------- Carga clave API ---------------------
+GOOGLE_KEY = os.getenv("GOOGLE_PLACES_API_KEY") or st.secrets.get("GOOGLE_PLACES_API_KEY")
 
 # --------------------- Estado ---------------------
 def _init_state():
@@ -9,7 +14,7 @@ def _init_state():
     if "prof_last_route_url" not in st.session_state:
         st.session_state.prof_last_route_url = None
     if "prof_origin_manual" not in st.session_state:
-        st.session_state.prof_origin_manual = ""  # origen fijado por botón ubicación
+        st.session_state.prof_origin_manual = ""
     if "prof_open_check" not in st.session_state:
         st.session_state.prof_open_check = False
 
@@ -23,30 +28,32 @@ def _remove_stop():
         st.session_state.pop(f"prof_stop_{idx}_manual", None)
         st.session_state.prof_stops_count -= 1
 
-# --------------------- Utilidades ---------------------
+# --------------------- Autocompletado Google ---------------------
+def google_autocomplete(query: str, max_results: int = 5):
+    """Devuelve sugerencias de direcciones desde Google Places API"""
+    if not GOOGLE_KEY or not query:
+        return []
+    try:
+        url = (
+            "https://maps.googleapis.com/maps/api/place/autocomplete/json"
+            f"?input={quote_plus(query)}&types=geocode&language=es&key={GOOGLE_KEY}"
+        )
+        r = requests.get(url, timeout=6)
+        data = r.json()
+        preds = data.get("predictions", [])
+        return [p.get("description") for p in preds if p.get("description")]
+    except Exception as e:
+        print("Google autocomplete error:", e)
+        return []
+
+# --------------------- IP -> dirección aproximada ---------------------
 def _ip_location_to_address() -> str | None:
-    """
-    Detecta ubicación por IP y devuelve una dirección aproximada.
-    Nota: en Streamlit Cloud suele devolver la IP del servidor (no exacto).
-    """
     try:
         ip = requests.get("https://ipapi.co/json/", timeout=6).json()
-        lat, lon = ip.get("latitude"), ip.get("longitude")
-        if lat is None or lon is None:
-            city = ip.get("city") or ""
-            region = ip.get("region") or ""
-            country = ip.get("country_name") or ""
-            guess = ", ".join([x for x in [city, region, country] if x])
-            return guess if guess else None
-
-        url = (
-            "https://nominatim.openstreetmap.org/reverse?"
-            f"format=json&lat={lat}&lon={lon}&zoom=16&addressdetails=0"
-        )
-        headers = {"User-Agent": "PlanificadorRutas/1.0 (streamlit)"}
-        r = requests.get(url, headers=headers, timeout=6)
-        r.raise_for_status()
-        return r.json().get("display_name") or None
+        city = ip.get("city") or ""
+        region = ip.get("region") or ""
+        country = ip.get("country_name") or ""
+        return ", ".join([x for x in [city, region, country] if x])
     except Exception as e:
         print("ip->address error:", e)
         return None
@@ -58,10 +65,16 @@ def mostrar_profesional():
     st.subheader("Ruta de trabajo")
     st.caption("Planifica visitas a clientes, obras o inspecciones. La **última parada** será el **destino final**.")
 
-    # -------- Origen (con autocompletado + campo manual + botón ubicación)
+    # -------- ORIGEN
     st.markdown("**Origen**")
-    origin_label = address_input("Dirección completa (origen)", "prof_origin")
-    origin_manual = st.text_input("o escribir manualmente", key="prof_origin_manual_text", placeholder="Carrer / Calle, ciudad…")
+    origin = st.text_input("Dirección completa (autocompletar)", key="prof_origin")
+    # Sugerencias Google
+    if origin and GOOGLE_KEY:
+        suggestions = google_autocomplete(origin)
+        if suggestions:
+            chosen = st.selectbox("Sugerencias", suggestions, key="prof_origin_choice")
+            if chosen:
+                origin = chosen
 
     colb1, colb2 = st.columns([0.55, 0.45])
     with colb1:
@@ -76,10 +89,11 @@ def mostrar_profesional():
         if st.session_state.prof_origin_manual:
             st.info(f"Origen actual: {st.session_state.prof_origin_manual}")
 
-    st.caption("Sugerencia móvil: si no ves sugerencias, escribe el domicilio completo en el campo manual.")
+    if not GOOGLE_KEY:
+        st.warning("⚠️ No hay clave de Google Places configurada. El autocompletado puede no funcionar en móvil.")
 
-    # -------- Paradas (dinámicas) con autocompletado + campo manual
-    st.markdown("### Paradas intermedias")
+    # -------- PARADAS
+    st.markdown("### Paradas intermedias (la última será el destino)")
     c1, c2, _ = st.columns([0.25, 0.25, 0.5])
     with c1:
         st.button("+ Añadir parada", on_click=_add_stop, use_container_width=True)
@@ -89,23 +103,26 @@ def mostrar_profesional():
     stops_labels: list[str] = []
     for i in range(st.session_state.prof_stops_count):
         st.markdown(f"**Parada #{i+1}**")
-        s_label = address_input(f"Buscar parada #{i+1}", f"prof_stop_{i}")
-        s_manual = st.text_input("o escribir manualmente", key=f"prof_stop_{i}_manual", placeholder="Dirección completa…")
-        # Preferencia: selección del searchbox > campo manual
-        final_label = s_label or s_manual
+        stop = st.text_input(f"Buscar parada #{i+1}", key=f"prof_stop_{i}")
+        # Autocompletado en paradas
+        sug = google_autocomplete(stop) if stop and GOOGLE_KEY else []
+        if sug:
+            choice = st.selectbox("Sugerencias", sug, key=f"prof_stop_choice_{i}")
+            if choice:
+                stop = choice
+        manual = st.text_input("o escribir manualmente", key=f"prof_stop_{i}_manual")
+        final_label = stop or manual
         if final_label:
             stops_labels.append(final_label)
 
-    # -------- Check 'abierto ahora'
     st.session_state.prof_open_check = st.checkbox(
         "Comprobar si los lugares están abiertos ahora (si hay datos de Google)",
         value=st.session_state.prof_open_check
     )
 
-    # ---------------- Generar Ruta ----------------
+    # -------- GENERAR RUTA --------
     if st.button("Generar ruta profesional", type="primary"):
-        # Origen: prioridad searchbox > manual > botón ubicación
-        chosen_origin = origin_label or origin_manual or st.session_state.prof_origin_manual
+        chosen_origin = origin or st.session_state.prof_origin_manual
         if not chosen_origin:
             st.error("Indica el **origen** (o usa el botón de ubicación).")
             return
@@ -113,57 +130,24 @@ def mostrar_profesional():
             st.error("Añade al menos **una parada** (será el destino final).")
             return
 
-        # Resolver origen
+        # Origen y destino
         o = resolve_selection(chosen_origin, "prof_origin")
-
-        # Destino = última parada; waypoints = anteriores
         destination_label = stops_labels[-1]
         waypoints_labels = stops_labels[:-1]
 
         d_det = resolve_selection(destination_label, f"prof_stop_{len(stops_labels)-1}")
-        wp_resolved = []
-        open_report = []
 
-        for i, lab in enumerate(waypoints_labels):
-            det = resolve_selection(lab, f"prof_stop_{i}")
-            wp_resolved.append(det["address"])
-            if st.session_state.prof_open_check:
-                open_report.append((f"Parada #{i+1}", det.get("address"), det.get("open_now")))
+        # Waypoints
+        wp_resolved = [resolve_selection(w, f"prof_stop_{i}")["address"] for i, w in enumerate(waypoints_labels)]
 
         url = build_gmaps_url(o["address"], d_det["address"], wp_resolved if wp_resolved else None)
         st.session_state.prof_last_route_url = url
 
-        st.success("✅ Ruta generada")
+        st.success("✅ Ruta generada correctamente")
         st.write(url)
         st.image(make_qr(url), caption="Escanea para abrir la ruta en el móvil")
 
-        # Informe “abierto ahora”
-        if st.session_state.prof_open_check:
-            st.markdown("### Estado de apertura (ahora)")
-            # Origen
-            if o.get("open_now") is True:
-                st.markdown(f"**Origen:** ✅ Abierto – {o['address']}")
-            elif o.get("open_now") is False:
-                st.markdown(f"**Origen:** ⛔ Cerrado – {o['address']}")
-            else:
-                st.markdown(f"**Origen:** ℹ️ Sin datos – {o['address']}")
-            # Paradas intermedias
-            for title, addr, flag in open_report:
-                if flag is True:
-                    st.markdown(f"**{title}:** ✅ Abierto – {addr}")
-                elif flag is False:
-                    st.markdown(f"**{title}:** ⛔ Cerrado – {addr}")
-                else:
-                    st.markdown(f"**{title}:** ℹ️ Sin datos – {addr}")
-            # Destino
-            if d_det.get("open_now") is True:
-                st.markdown(f"**Destino:** ✅ Abierto – {d_det['address']}")
-            elif d_det.get("open_now") is False:
-                st.markdown(f"**Destino:** ⛔ Cerrado – {d_det['address']}")
-            else:
-                st.markdown(f"**Destino:** ℹ️ Sin datos – {d_det['address']}")
-
-    # -------- Última ruta
+    # -------- ÚLTIMA RUTA
     if st.session_state.prof_last_route_url:
         with st.expander("Última ruta generada (esta sesión)", expanded=False):
             st.write(st.session_state.prof_last_route_url)
