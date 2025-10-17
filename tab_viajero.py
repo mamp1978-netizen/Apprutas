@@ -1,5 +1,5 @@
 import streamlit as st
-from app_utils import mostrar_viajero
+from app_utils import address_input, resolve_selection, build_gmaps_url, make_qr
 
 def mostrar_viajero():
     st.subheader("Plan rápido (viajero)")
@@ -9,10 +9,12 @@ def mostrar_viajero():
     if st.button("Crear ruta (viajero)"):
         if not o or not d:
             st.error("Falta origen o destino.")
-        else:
-            o_res = resolve_selection(o, "viajero_origen")
-            d_res = resolve_selection(d, "viajero_destino")
-            url = build_gmaps_url(o_res["address"], d_res["address"])
-            st.success("Ruta generada")
-            st.write(url)
-            st.image(make_qr(url), caption="QR de la ruta")
+            return
+
+        o_res = resolve_selection(o, "viajero_origen")
+        d_res = resolve_selection(d, "viajero_destino")
+
+        url = build_gmaps_url(o_res["address"], d_res["address"])
+        st.success("Ruta generada")
+        st.write(url)
+        st.image(make_qr(url), caption="QR de la ruta")

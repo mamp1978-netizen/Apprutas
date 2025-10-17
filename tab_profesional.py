@@ -1,5 +1,5 @@
 import streamlit as st
-from app_utils import mostrar_profesional
+from app_utils import address_input, resolve_selection, build_gmaps_url, make_qr
 
 def mostrar_profesional():
     st.subheader("Ruta de trabajo")
@@ -17,10 +17,12 @@ def mostrar_profesional():
     if st.button("Generar ruta profesional"):
         if not origin_label or not dest_label:
             st.error("Indica al menos origen y destino.")
-        else:
-            o = resolve_selection(origin_label, "prof_origin")
-            d = resolve_selection(dest_label, "prof_dest")
-            url = build_gmaps_url(o["address"], d["address"], stops if stops else None)
-            st.success("Ruta generada")
-            st.write(url)
-            st.image(make_qr(url), caption="Escanea para abrir la ruta en el móvil")
+            return
+
+        o = resolve_selection(origin_label, "prof_origin")
+        d = resolve_selection(dest_label, "prof_dest")
+
+        url = build_gmaps_url(o["address"], d["address"], stops if stops else None)
+        st.success("Ruta generada")
+        st.write(url)
+        st.image(make_qr(url), caption="Escanea para abrir la ruta en el móvil")
