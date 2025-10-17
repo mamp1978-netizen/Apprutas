@@ -1,12 +1,12 @@
 import streamlit as st
-from app_utils import address_input, resolve_selection, build_gmaps_url, make_qr
+from app_utils import resolve_selection, build_gmaps_url, make_qr
 
 def mostrar_turistico():
     st.subheader("Ruta turística con varias paradas")
     st.caption("La última parada se toma como destino final.")
 
-    o = address_input("Punto de inicio", "tour_origin")
-    d = address_input("Punto final", "tour_dest")
+    o = st.text_input("Punto de inicio", key="tour_origin")
+    d = st.text_input("Punto final", key="tour_dest")
 
     st.markdown("**Lugares a visitar (uno por línea)**")
     spots = st.text_area("", height=140, placeholder="Sagrada Familia, Barcelona\nParc Güell, Barcelona\nCasa Batlló, Barcelona…")

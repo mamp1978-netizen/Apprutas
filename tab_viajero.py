@@ -1,13 +1,13 @@
 import streamlit as st
-from app_utils import address_input, resolve_selection, build_gmaps_url, make_qr
+from app_utils import resolve_selection, build_gmaps_url, make_qr
 
 def mostrar_viajero():
     st.subheader("Plan rápido (viajero)")
     st.caption("Indica inicio y final. (Puedes añadir una parada opcional).")
 
-    o = address_input("Origen", "trav_origin")
-    d = address_input("Destino", "trav_dest")
-    p = address_input("Parada intermedia (opcional)", "trav_mid")
+    o = st.text_input("Origen", key="trav_origin")
+    d = st.text_input("Destino", key="trav_dest")
+    p = st.text_input("Parada intermedia (opcional)", key="trav_mid")
 
     if st.button("Crear ruta (viajero)"):
         if not o or not d:
