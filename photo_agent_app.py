@@ -26,11 +26,12 @@ GOOGLE_PLACES_API_KEY = get_key("GOOGLE_PLACES_API_KEY")
 SERPAPI_API_KEY = get_key("SERPAPI_API_KEY") or get_key("SERPAPI_KEY")
 REQUEST_TIMEOUT = 10
 
+# Estado para cachear sugerencias por componente
 if "suggest_maps" not in st.session_state:
     st.session_state.suggest_maps = {}
 
 # -------------------------------------------------
-# FUNCIONES DE PROVEEDORES
+# PROVEEDORES
 # -------------------------------------------------
 def provider_google_autocomplete(query: str, max_results: int = 8):
     if not GOOGLE_PLACES_API_KEY:
@@ -41,32 +42,43 @@ def provider_google_autocomplete(query: str, max_results: int = 8):
             f"?input={quote_plus(query)}&types=geocode&language=es&key={GOOGLE_PLACES_API_KEY}"
         )
         r = requests.get(url, timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
         data = r.json()
         preds = data.get("predictions", [])
-        out = [(p.get("description"), {"provider": "google", "place_id": p.get("place_id")})
-               for p in preds if p.get("description") and p.get("place_id")]
+        out = [
+            (p.get("description"), {"provider": "google", "place_id": p.get("place_id")})
+            for p in preds if p.get("description") and p.get("place_id")
+        ]
         return out[:max_results]
     except Exception as e:
-        print("❌ Google error:", e)
+        print("❌ Google autocomplete error:", e)
         return []
 
 def provider_serpapi_maps(query: str, max_results: int = 8):
     if not SERPAPI_API_KEY:
         return []
     try:
-        url = f"https://serpapi.com/search.json?engine=google_maps&q={quote_plus(query)}&hl=es&api_key={SERPAPI_API_KEY}"
+        url = (
+            "https://serpapi.com/search.json?"
+            f"engine=google_maps&q={quote_plus(query)}&hl=es&api_key={SERPAPI_API_KEY}"
+        )
         r = requests.get(url, timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
         js = r.json()
         res = js.get("local_results") or []
         out = []
-        for r_ in res[:max_results]:
-            desc = (r_.get("title") or "") + " – " + (r_.get("address") or "")
-            gps = r_.get("gps_coordinates") or {}
-            out.append((desc.strip(" –"), {
-                "provider": "serpapi",
-                "lat": gps.get("latitude"),
-                "lng": gps.get("longitude")
-            }))
+        for it in res[:max_results]:
+            title = it.get("title") or ""
+            addr = it.get("address") or ""
+            desc = (f"{title} – {addr}").strip(" –")
+            gps = it.get("gps_coordinates") or {}
+            lat, lng = gps.get("latitude"), gps.get("longitude")
+            if desc and lat and lng:
+                out.append((desc, {
+                    "provider": "serpapi",
+                    "lat": lat, "lng": lng,
+                    "desc": desc
+                }))
         return out
     except Exception as e:
         print("❌ SerpAPI error:", e)
@@ -74,18 +86,23 @@ def provider_serpapi_maps(query: str, max_results: int = 8):
 
 def provider_nominatim(query: str, max_results: int = 8):
     try:
-        url = f"https://nominatim.openstreetmap.org/search?q={quote_plus(query)}&format=json&limit={max_results}"
-        headers = {"User-Agent": "PlanificadorRutas/1.0"}
+        url = (
+            "https://nominatim.openstreetmap.org/search?"
+            f"q={quote_plus(query)}&format=json&addressdetails=0&limit={max_results}"
+        )
+        headers = {"User-Agent": "PlanificadorRutas/1.0 (streamlit app)"}
         r = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
-        data = r.json()
+        r.raise_for_status()
+        arr = r.json()
         out = []
-        for it in data[:max_results]:
+        for it in arr[:max_results]:
             desc = it.get("display_name")
-            if desc:
+            lat, lng = it.get("lat"), it.get("lon")
+            if desc and lat and lng:
                 out.append((desc, {
                     "provider": "nominatim",
-                    "lat": it.get("lat"),
-                    "lng": it.get("lon")
+                    "lat": float(lat), "lng": float(lng),
+                    "desc": desc
                 }))
         return out
     except Exception as e:
@@ -96,16 +113,18 @@ def get_place_coords_from_google(place_id: str):
     try:
         url = (
             "https://maps.googleapis.com/maps/api/place/details/json"
-            f"?place_id={quote_plus(place_id)}&fields=geometry,opening_hours,formatted_address&language=es&key={GOOGLE_PLACES_API_KEY}"
+            f"?place_id={quote_plus(place_id)}&fields=geometry,opening_hours,formatted_address,name"
+            f"&language=es&key={GOOGLE_PLACES_API_KEY}"
         )
         r = requests.get(url, timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
         d = r.json().get("result", {})
         loc = d.get("geometry", {}).get("location", {})
         return {
             "lat": loc.get("lat"),
             "lng": loc.get("lng"),
             "open_now": d.get("opening_hours", {}).get("open_now"),
-            "address": d.get("formatted_address")
+            "address": d.get("formatted_address") or d.get("name")
         }
     except Exception as e:
         print("❌ Google details error:", e)
@@ -115,70 +134,75 @@ def get_place_coords_from_google(place_id: str):
 # AUTOCOMPLETADO UNIFICADO
 # -------------------------------------------------
 def suggest_addresses(query: str, key_bucket: str):
-    """Siempre devuelve una lista de cadenas, aunque no haya resultados."""
+    """Devuelve SIEMPRE una lista de cadenas (labels)."""
     if not query or len(query.strip()) < 2:
         return []
 
     results = []
     try:
-        results = provider_google_autocomplete(query)
+        results = provider_google_autocomplete(query) or []
         if not results:
-            results = provider_serpapi_maps(query)
+            results = provider_serpapi_maps(query) or []
         if not results:
-            results = provider_nominatim(query)
+            results = provider_nominatim(query) or []
     except Exception as e:
         print("❌ Error global en suggest_addresses:", e)
         results = []
 
-    # ⚙️ Filtro final: debe ser lista de tuplas (label, dict)
     if not isinstance(results, list):
         results = []
-    clean_results = []
+
+    clean = []
     for r in results:
-        if isinstance(r, (tuple, list)) and isinstance(r[0], str):
-            clean_results.append(r)
-    if not clean_results:
-        st.info(f"No se encontraron sugerencias para «{query}».")
+        if isinstance(r, (tuple, list)) and r and isinstance(r[0], str):
+            clean.append(r)
+
+    if not clean:
+        # No rompemos el componente, simplemente no mostramos opciones
         return []
 
-    # Guarda metadatos
     bucket = st.session_state.suggest_maps.setdefault(key_bucket, {})
-    for label, meta in clean_results:
+    labels = []
+    for label, meta in clean:
         bucket[label] = meta
-    return [label for label, _ in clean_results]
+        labels.append(label)
+    return labels
 
 def resolve_selection(label: str, key_bucket: str):
     meta = st.session_state.suggest_maps.get(key_bucket, {}).get(label)
     if not meta:
         return {"address": label, "lat": None, "lng": None, "open_now": None}
+
     if meta.get("provider") == "google" and meta.get("place_id"):
-        return get_place_coords_from_google(meta["place_id"])
-    return {"address": label, "lat": meta.get("lat"), "lng": meta.get("lng"), "open_now": meta.get("open_now")}
+        det = get_place_coords_from_google(meta["place_id"])
+        return {
+            "address": det.get("address") or label,
+            "lat": det.get("lat"), "lng": det.get("lng"),
+            "open_now": det.get("open_now")
+        }
+
+    return {
+        "address": meta.get("desc") or label,
+        "lat": meta.get("lat"), "lng": meta.get("lng"),
+        "open_now": meta.get("open_now")
+    }
 
 # -------------------------------------------------
 # UI HELPERS
 # -------------------------------------------------
 def address_input(label: str, key: str):
-    """Usa searchbox si está disponible; si no, text_input básico."""
-    if DISABLE_AUTOCOMPLETE or not SEARCHBOX_OK:
-        return st.text_input(label, key=f"text_{key}", placeholder="Escribe la dirección completa…")
-    
+    """Busca con autocompletado; si falla, usa text_input básico."""
     try:
-        # Intentamos usar el autocompletado
         return st_searchbox(
-            search_function=lambda q: suggest_addresses(q, key),
+            search_function=lambda q: suggest_addresses(q, key_bucket=key),
             label=label,
             key=key,
-            default=None  # compatible con versiones antiguas de streamlit-searchbox
+            default=None   # (no usamos max_results_to_show para compatibilidad)
         )
     except Exception as e:
-        # Si algo falla, se usa un input normal
-        st.warning("Autocompletado desactivado por error; usando modo básico.")
+        st.warning("Autocompletado desactivado; usando campo de texto.")
         print("st_searchbox runtime error:", e)
         return st.text_input(label, key=f"text_{key}", placeholder="Escribe la dirección completa…")
-except Exception as e:
-        st.error(f"Error en búsqueda: {e}")
-        return None
 
 def build_gmaps_url(origin, dest, stops=None):
     base = "https://www.google.com/maps/dir/?api=1"
@@ -189,6 +213,7 @@ def build_gmaps_url(origin, dest, stops=None):
     ]
     if stops:
         params.append(f"waypoints={quote_plus('|'.join(stops))}")
+        params.append("optimize=true")
     return base + "&" + "&".join(params)
 
 def make_qr(url: str) -> BytesIO:
@@ -224,7 +249,7 @@ with tabs[0]:
 
     if st.button("Generar ruta"):
         if not origin_label or not dest_label:
-            st.error("Indica al menos origen y destino.")
+            st.error("Indica al menos **origen** y **destino**.")
         else:
             o = resolve_selection(origin_label, "prof_origin_search")
             d = resolve_selection(dest_label, "prof_dest_search")
@@ -255,14 +280,14 @@ with tabs[2]:
     o = address_input("Punto de inicio", "tour_origin")
     d = address_input("Punto final", "tour_dest")
     spots = st.text_area("Lugares a visitar (uno por línea)", height=120)
-    stops = [s.strip() for s in spots.splitlines() if s.strip()]
+    tour_stops = [s.strip() for s in spots.splitlines() if s.strip()]
     if st.button("Crear itinerario turístico"):
         if not o or not d:
             st.error("Indica inicio y final.")
         else:
             o_res = resolve_selection(o, "tour_origin")
             d_res = resolve_selection(d, "tour_dest")
-            url = build_gmaps_url(o_res["address"], d_res["address"], stops)
+            url = build_gmaps_url(o_res["address"], d_res["address"], tour_stops if tour_stops else None)
             st.success("Itinerario listo")
             st.write(url)
             st.image(make_qr(url), caption="QR del itinerario")
@@ -271,5 +296,5 @@ with tabs[2]:
 # PIE
 # -------------------------------------------------
 st.divider()
-st.caption("Autocompletado: Google Places / SerpAPI / Nominatim (OSM).  \
-Añade tus claves en .env o st.secrets (`GOOGLE_PLACES_API_KEY`, `SERPAPI_API_KEY`).")
+st.caption("Autocompletado: Google Places / SerpAPI / Nominatim (OSM). "
+           "Añade tus claves en .env o st.secrets (`GOOGLE_PLACES_API_KEY`, `SERPAPI_API_KEY`).")
