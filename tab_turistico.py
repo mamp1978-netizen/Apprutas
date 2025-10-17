@@ -1,5 +1,5 @@
 import streamlit as st
-from aplicación_utils import resolve_selection, build_gmaps_url, make_qr
+from app_utils import resolve_selection, build_gmaps_url, make_qr
 
 def mostrar_turistico():
     st.subheader("Ruta turística con varias paradas")
