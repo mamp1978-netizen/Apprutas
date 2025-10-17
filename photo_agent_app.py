@@ -1,4 +1,7 @@
 from urllib.parse import quote_plus
+from tab_profesional import mostrar_profesional
+from tab_viajero import mostrar_viajero
+from tab_turistico import mostrar_turistico
 
 def build_gmaps_url(origin: str, destination: str, waypoints=None, *, mode="driving", avoid=None, optimize=True):
     """
