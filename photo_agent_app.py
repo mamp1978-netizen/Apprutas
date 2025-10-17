@@ -8,7 +8,12 @@ import qrcode
 import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
-from streamlit_searchbox import st_searchbox  # ⬅️ Autocompletado
+from streamlit_searchbox import st_searchbox
+
+origin_prof_full = st_searchbox(
+    "Dirección completa (origen)",
+    key="prof_origin_search"
+)
 
 # =========================
 # Variables de entorno
