@@ -5,28 +5,19 @@ from app_utils import address_input, resolve_selection, build_gmaps_url, make_qr
 
 # --------------------- Estado ---------------------
 def _init_state():
-    if "prof_stops_count" not in st.session_state:
-        st.session_state.prof_stops_count = 0
+    # Lista ordenada de puntos (str). [p0, p1, p2, ...]
+    if "prof_points" not in st.session_state:
+        st.session_state.prof_points: list[str] = []
     if "prof_last_route_url" not in st.session_state:
         st.session_state.prof_last_route_url = None
-    if "prof_origin_loc" not in st.session_state:
-        st.session_state.prof_origin_loc = ""  # texto fijado por botón ubicación
     if "prof_open_check" not in st.session_state:
         st.session_state.prof_open_check = False
-
-def _add_stop():
-    st.session_state.prof_stops_count += 1
-
-def _remove_stop():
-    if st.session_state.prof_stops_count > 0:
-        idx = st.session_state.prof_stops_count - 1
-        # limpiamos posibles valores anteriores del searchbox
-        st.session_state.pop(f"prof_stop_{idx}", None)
-        st.session_state.prof_stops_count -= 1
+    if "prof_last_location_guess" not in st.session_state:
+        st.session_state.prof_last_location_guess = ""
 
 # --------------------- Ubicación aprox. por IP ---------------------
 def _ip_location_to_address() -> str | None:
-    """Obtiene ciudad/área por IP (aprox.)."""
+    """Obtiene ciudad/área por IP (aprox.). En la nube puede no ser exacto."""
     try:
         ip = requests.get("https://ipapi.co/json/", timeout=6).json()
         city = ip.get("city") or ""
@@ -38,79 +29,102 @@ def _ip_location_to_address() -> str | None:
         print("ip->address error:", e)
         return None
 
+# --------------------- Acciones ---------------------
+def _add_point_from_input(value: str | None):
+    value = (value or "").strip()
+    if not value:
+        st.warning("Escribe o selecciona una dirección para añadirla.")
+        return
+    st.session_state.prof_points.append(value)
+    st.success(f"➕ Añadido: {value}")
+
+def _add_point_from_location():
+    guess = _ip_location_to_address()
+    if guess:
+        st.session_state.prof_last_location_guess = guess
+        st.session_state.prof_points.append(guess)
+        st.success(f"📍 Añadido por ubicación (aprox.): {guess}")
+    else:
+        st.warning("No pude obtener tu ubicación. Escribe tu dirección o selecciona en el buscador.")
+
+def _remove_point(idx: int):
+    if 0 <= idx < len(st.session_state.prof_points):
+        removed = st.session_state.prof_points.pop(idx)
+        st.info(f"🗑️ Eliminado: {removed}")
+
 # --------------------- UI principal ---------------------
 def mostrar_profesional():
     _init_state()
 
     st.subheader("Ruta de trabajo")
-    st.caption("Planifica visitas a clientes, obras o inspecciones. La **última parada** será el **destino final**.")
+    st.caption(
+        "Crea tu lista de puntos: el **primero** será el **origen**, el **último** el **destino**, "
+        "y los demás serán **paradas intermedias**."
+    )
 
-    # ---------- ORIGEN (una sola barra + botón ubicación al lado)
-    st.markdown("**Origen**")
-    c_or, c_btn = st.columns([0.80, 0.20], vertical_alignment="bottom")
-    with c_or:
-        # barra con autocompletado (Google/SerpAPI/OSM) desde app_utils.address_input
-        origin_label = address_input("Dirección completa (origen)", "prof_origin")
-    with c_btn:
+    # ---------- Barra única para añadir puntos + botones
+    st.markdown("**Añadir punto**")
+    c_input, c_add, c_loc = st.columns([0.65, 0.18, 0.17], vertical_alignment="bottom")
+
+    with c_input:
+        new_point = address_input("Buscar dirección…", "prof_add_point")
+
+    with c_add:
+        if st.button("➕ Añadir", use_container_width=True):
+            _add_point_from_input(new_point)
+
+    with c_loc:
         if st.button("📍 Ubicación", use_container_width=True):
-            guess = _ip_location_to_address()
-            if guess:
-                # Guardamos el texto para usarlo si no selecciona nada en el searchbox
-                st.session_state.prof_origin_loc = guess
-                st.success(f"Origen aproximado: {guess}")
-            else:
-                st.warning("No pude obtener tu ubicación. Escribe tu dirección o selecciona en el buscador.")
-        # Mostrar estado actual del botón ubicación
-        if st.session_state.prof_origin_loc:
-            st.caption(f"Actual: {st.session_state.prof_origin_loc}")
+            _add_point_from_location()
 
-    # ---------- PARADAS (dinámicas), una sola barra por parada
-    st.markdown("### Paradas intermedias (la última será el destino)")
-    ctrl1, ctrl2, _ = st.columns([0.25, 0.25, 0.5])
-    with ctrl1:
-        st.button("+ Añadir parada", on_click=_add_stop, use_container_width=True)
-    with ctrl2:
-        st.button("Eliminar última", on_click=_remove_stop, use_container_width=True)
+    if st.session_state.prof_last_location_guess:
+        st.caption(f"Última ubicación aproximada detectada: {st.session_state.prof_last_location_guess}")
 
-    stops_labels: list[str] = []
-    for i in range(st.session_state.prof_stops_count):
-        lbl = address_input(f"Parada #{i+1}", f"prof_stop_{i}")
-        if lbl:
-            stops_labels.append(lbl)
+    st.divider()
 
-    # ---------- Opcional: “abierto ahora”
+    # ---------- Lista de puntos actuales (con eliminar individual)
+    st.markdown("### Puntos de la ruta (arriba a abajo)")
+    if not st.session_state.prof_points:
+        st.info("Aún no hay puntos. Añade uno con la barra de arriba o con 📍 Ubicación.")
+    else:
+        for i, p in enumerate(st.session_state.prof_points):
+            col_lbl, col_btn = st.columns([0.9, 0.1])
+            with col_lbl:
+                prefix = "Origen" if i == 0 else ("Destino" if i == len(st.session_state.prof_points) - 1 else f"Parada #{i}")
+                st.write(f"**{prefix}:** {p}")
+            with col_btn:
+                st.button("🗑️", key=f"del_{i}", on_click=_remove_point, args=(i,), help="Eliminar este punto", use_container_width=True)
+
     st.session_state.prof_open_check = st.checkbox(
         "Comprobar si los lugares están abiertos ahora (si hay datos de Google)",
         value=st.session_state.prof_open_check
     )
 
-    # ---------- GENERAR RUTA ----------
+    # ---------- Generar ruta ----------
     if st.button("Generar ruta profesional", type="primary"):
-        # Origen: si no eligió nada en el searchbox, usamos el fijado por ubicación (si existe)
-        chosen_origin = origin_label or st.session_state.prof_origin_loc
-        if not chosen_origin:
-            st.error("Indica el **origen** (o pulsa el botón 📍 Ubicación).")
-            return
-        if len(stops_labels) == 0:
-            st.error("Añade al menos **una parada** (será el destino final).")
+        pts = st.session_state.prof_points
+        if len(pts) < 2:
+            st.error("Necesitas al menos **2 puntos** (origen y destino).")
             return
 
-        # Resolver datos (abre/cierra si procede de Google)
-        o = resolve_selection(chosen_origin, "prof_origin")
-        destination_label = stops_labels[-1]
-        waypoints_labels  = stops_labels[:-1]
+        # Resolver direcciones a formato final (aprovecha Google si hay selection previa)
+        # origen, destino, waypoints
+        o_raw = pts[0]
+        d_raw = pts[-1]
+        wp_raw = pts[1:-1]
 
-        d_det = resolve_selection(destination_label, f"prof_stop_{len(stops_labels)-1}")
+        o = resolve_selection(o_raw, "prof_point_0")
+        d = resolve_selection(d_raw, f"prof_point_{len(pts)-1}")
 
         wp_resolved = []
         open_report = []
-        for i, lab in enumerate(waypoints_labels):
-            det = resolve_selection(lab, f"prof_stop_{i}")
+        for i, label in enumerate(wp_raw, start=1):
+            det = resolve_selection(label, f"prof_point_{i}")
             wp_resolved.append(det["address"])
             if st.session_state.prof_open_check:
-                open_report.append((f"Parada #{i+1}", det.get("address"), det.get("open_now")))
+                open_report.append((f"Parada #{i}", det.get("address"), det.get("open_now")))
 
-        url = build_gmaps_url(o["address"], d_det["address"], wp_resolved if wp_resolved else None)
+        url = build_gmaps_url(o["address"], d["address"], wp_resolved if wp_resolved else None)
         st.session_state.prof_last_route_url = url
 
         st.success("✅ Ruta generada")
@@ -134,7 +148,7 @@ def mostrar_profesional():
                     st.markdown(f"**{title}:** ⛔ Cerrado – {addr}")
                 else:
                     st.markdown(f"**{title}:** ℹ️ Sin datos – {addr}")
-            _flagline("Destino", d_det)
+            _flagline("Destino", d)
 
     # ---------- Última ruta de la sesión
     if st.session_state.prof_last_route_url:
