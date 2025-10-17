@@ -1,7 +1,6 @@
 # photo_agent_app.py
 from urllib.parse import quote_plus
 from io import BytesIO
-from datetime import datetime
 import os
 import requests
 from dotenv import load_dotenv
@@ -13,11 +12,11 @@ import qrcode
 # -------------------------------------------------
 # Configuración general
 # -------------------------------------------------
-load_dotenv()  # lee variables desde .env si existe
+load_dotenv()
 st.set_page_config(page_title="Planificador de Rutas", page_icon="🗺️", layout="wide")
 
 def get_key(name: str):
-    """Obtiene una clave priorizando st.secrets y luego variables de entorno."""
+    """Prioriza st.secrets y luego variables de entorno."""
     try:
         if name in st.secrets:
             return st.secrets[name]
@@ -28,22 +27,25 @@ def get_key(name: str):
 GOOGLE_PLACES_API_KEY = get_key("GOOGLE_PLACES_API_KEY")
 SERPAPI_API_KEY = get_key("SERPAPI_API_KEY") or get_key("SERPAPI_KEY")
 
-# Pequeña caché de sugerencias por componente
+# Caché ligera de sugerencias por searchbox
 if "suggest_maps" not in st.session_state:
     st.session_state.suggest_maps = {}
+if "last_empty_query" not in st.session_state:
+    st.session_state.last_empty_query = None
+
+REQUEST_TIMEOUT = 10  # seg
 
 # -------------------------------------------------
 # Proveedores de autocompletado / geocodificación
 # -------------------------------------------------
 def provider_google_autocomplete(query: str, max_results: int = 8):
-    """Sugerencias desde Google Places Autocomplete."""
     if not GOOGLE_PLACES_API_KEY:
         return []
     url = (
         "https://maps.googleapis.com/maps/api/place/autocomplete/json"
         f"?input={quote_plus(query)}&types=geocode&language=es&key={GOOGLE_PLACES_API_KEY}"
     )
-    r = requests.get(url, timeout=10)
+    r = requests.get(url, timeout=REQUEST_TIMEOUT)
     r.raise_for_status()
     data = r.json()
     out = []
@@ -55,14 +57,13 @@ def provider_google_autocomplete(query: str, max_results: int = 8):
     return out
 
 def provider_serpapi_maps(query: str, max_results: int = 8):
-    """Sugerencias desde SerpAPI (Google Maps)."""
     if not SERPAPI_API_KEY:
         return []
     url = (
         "https://serpapi.com/search.json?"
         f"engine=google_maps&q={quote_plus(query)}&hl=es&api_key={SERPAPI_API_KEY}"
     )
-    r = requests.get(url, timeout=10)
+    r = requests.get(url, timeout=REQUEST_TIMEOUT)
     r.raise_for_status()
     js = r.json()
     results = js.get("local_results") or []
@@ -90,13 +91,12 @@ def provider_serpapi_maps(query: str, max_results: int = 8):
     return out
 
 def provider_nominatim(query: str, max_results: int = 8):
-    """Último recurso gratuito (OpenStreetMap Nominatim)."""
     url = (
         "https://nominatim.openstreetmap.org/search?"
         f"q={quote_plus(query)}&format=json&addressdetails=0&limit={max_results}"
     )
     headers = {"User-Agent": "PlanificadorRutas/1.0 (streamlit app)"}
-    r = requests.get(url, headers=headers, timeout=10)
+    r = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
     r.raise_for_status()
     arr = r.json()
     out = []
@@ -112,13 +112,12 @@ def provider_nominatim(query: str, max_results: int = 8):
     return out
 
 def get_place_coords_from_google(place_id: str):
-    """Detalles de un place_id de Google (coords + open_now)."""
     url = (
         "https://maps.googleapis.com/maps/api/place/details/json"
         f"?place_id={quote_plus(place_id)}&fields=geometry,opening_hours,formatted_address,name"
         f"&language=es&key={GOOGLE_PLACES_API_KEY}"
     )
-    r = requests.get(url, timeout=10)
+    r = requests.get(url, timeout=REQUEST_TIMEOUT)
     r.raise_for_status()
     data = r.json().get("result", {})
     geo = data.get("geometry", {}).get("location", {})
@@ -128,26 +127,52 @@ def get_place_coords_from_google(place_id: str):
     return {"lat": lat, "lng": lng, "open_now": open_now, "desc": address}
 
 # -------------------------------------------------
-# Sugeridor unificado + resolución de selección
+# Sugeridor unificado (a prueba de errores)
 # -------------------------------------------------
 def suggest_addresses(query: str, key_bucket: str):
-    """Devuelve labels de sugerencias y guarda metadatos por label en session_state."""
-    suggestions = []
-    try:
-        suggestions = provider_google_autocomplete(query) or []
-    except Exception:
-        pass
-    if not suggestions:
-        try:
-            suggestions = provider_serpapi_maps(query) or []
-        except Exception:
-            pass
-    if not suggestions:
-        try:
-            suggestions = provider_nominatim(query) or []
-        except Exception:
-            suggestions = []
+    """
+    Devuelve SIEMPRE una lista de labels (strings).
+    Guarda metadatos por label en session_state.suggest_maps[key_bucket].
+    """
+    q = (query or "").strip()
+    if len(q) < 2:
+        return []
 
+    suggestions = []
+
+    # Google
+    try:
+        suggestions = provider_google_autocomplete(q) or []
+    except Exception as e:
+        print("Google autocomplete error:", e)
+
+    # SerpAPI
+    if not suggestions:
+        try:
+            suggestions = provider_serpapi_maps(q) or []
+        except Exception as e:
+            print("SerpAPI fallback error:", e)
+
+    # Nominatim
+    if not suggestions:
+        try:
+            suggestions = provider_nominatim(q) or []
+        except Exception as e:
+            print("Nominatim fallback error:", e)
+
+    # Garantiza lista, nunca None
+    if not isinstance(suggestions, list):
+        suggestions = []
+
+    # Si no hay nada, avisamos en la UI una única vez por consulta
+    if len(suggestions) == 0:
+        # Evita repetir el mismo aviso mientras el usuario escribe
+        if st.session_state.last_empty_query != q:
+            st.session_state.last_empty_query = q
+            st.info("No se encontraron sugerencias. Prueba con más detalle (p. ej. 'Girona, España' o una calle).")
+        return []
+
+    # Guardar metadatos por label
     bucket = st.session_state.suggest_maps.setdefault(key_bucket, {})
     labels = []
     for label, meta in suggestions:
@@ -158,7 +183,8 @@ def suggest_addresses(query: str, key_bucket: str):
 def resolve_selection(label: str, key_bucket: str):
     """Resuelve una selección del searchbox a dirección + (lat/lng/open_now si procede)."""
     meta = st.session_state.suggest_maps.get(key_bucket, {}).get(label)
-    if not meta:  # si el usuario pegó una dirección manualmente
+    if not meta:
+        # El usuario puede teclear/pegar una dirección manual
         return {"address": label, "lat": None, "lng": None, "open_now": None, "provider": None}
 
     provider = meta.get("provider")
@@ -169,13 +195,13 @@ def resolve_selection(label: str, key_bucket: str):
     elif provider in ("serpapi", "nominatim"):
         return {"address": meta.get("desc") or label, "lat": meta.get("lat"), "lng": meta.get("lng"),
                 "open_now": meta.get("open_now"), "provider": provider}
+
     return {"address": label, "lat": None, "lng": None, "open_now": None, "provider": None}
 
 # -------------------------------------------------
-# Helpers de UI / utilidades
+# Helpers UI
 # -------------------------------------------------
 def address_input(label: str, key: str):
-    """Searchbox con proveedores en cascada."""
     return st_searchbox(
         search_function=lambda q: suggest_addresses(q, key_bucket=key),
         label=label,
@@ -240,11 +266,7 @@ with tabs[0]:
         else:
             origin = resolve_selection(origin_label, "prof_origin_search")
             dest = resolve_selection(dest_label, "prof_dest_search")
-
-            # Las paradas se usan como texto; no es necesario resolver a lat/lng para Google Maps URL
-            waypoints_resolved = stops if stops else None
-
-            url = build_gmaps_url(origin["address"], dest["address"], waypoints_resolved)
+            url = build_gmaps_url(origin["address"], dest["address"], stops if stops else None)
             st.success("Ruta generada")
             st.write(url)
             st.image(make_qr(url), caption="Escanea para abrir la ruta en el móvil")
@@ -304,6 +326,6 @@ with tabs[2]:
 # -------------------------------------------------
 st.divider()
 st.caption(
-    "Consejo: añade tus claves en .env o st.secrets (`GOOGLE_PLACES_API_KEY`, `SERPAPI_API_KEY`). "
-    "Sin claves, el autocompletado usa Nominatim (OSM)."
+    "Claves opcionales: `GOOGLE_PLACES_API_KEY`, `SERPAPI_API_KEY` en .env o st.secrets. "
+    "Si no hay claves, el autocompletado usa Nominatim (OSM)."
 )
