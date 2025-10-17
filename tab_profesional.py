@@ -1,5 +1,5 @@
 import streamlit as st
-from app_utils import address_input, resolve_selection, build_gmaps_url, make_qr
+from app_utils import mostrar_profesional
 
 def mostrar_profesional():
     st.subheader("Ruta de trabajo")

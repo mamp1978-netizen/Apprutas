@@ -1,5 +1,5 @@
 import streamlit as st
-from app_utils import address_input, resolve_selection, build_gmaps_url, make_qr
+from app_utils import mostrar_viajero
 
 def mostrar_viajero():
     st.subheader("Plan rápido (viajero)")
@@ -16,4 +16,3 @@ def mostrar_viajero():
             st.success("Ruta generada")
             st.write(url)
             st.image(make_qr(url), caption="QR de la ruta")
-            
