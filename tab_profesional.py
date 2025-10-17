@@ -69,9 +69,12 @@ def search_and_add_top():
             st.caption("Sugerencias:")
             for s in suggestions[:6]:
                 st.write(f"• {s}")
+
         c1, c2 = st.columns([0.7, 0.3])
-        submitted = c1.form_submit_button("Añadir (ENTER)")
-        loc = c2.form_submit_button("📍 Usar mi ubicación")
+        with c1:
+            submitted = st.form_submit_button("Añadir (ENTER)")
+        with c2:
+            loc = st.form_submit_button("📍 Usar mi ubicación")
 
         if submitted:
             if suggestions:
@@ -101,7 +104,7 @@ def mostrar_profesional():
     # --- ÚNICA barra arriba
     search_and_add_top()
 
-    # --- Lista compacta debajo (sin segundo formulario)
+    # --- Lista compacta debajo
     st.markdown("### Puntos de la ruta (orden de viaje)")
     pts = st.session_state.prof_points
     if not pts:

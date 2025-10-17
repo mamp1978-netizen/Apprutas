@@ -21,8 +21,15 @@ GOOGLE_PLACES_API_KEY = _get_key("GOOGLE_PLACES_API_KEY")
 SERPAPI_API_KEY       = _get_key("SERPAPI_API_KEY") or _get_key("SERPAPI_KEY")
 REQUEST_TIMEOUT = 8
 
-if "suggest_maps" not in st.session_state:
-    st.session_state.suggest_maps = {}
+# ---- helper seguro para el bucket de sugerencias ----
+def _bucket_for(key_bucket: str) -> dict:
+    """Devuelve el sub-bucket para key_bucket, creando lo necesario en session_state."""
+    if "suggest_maps" not in st.session_state:
+        st.session_state["suggest_maps"] = {}
+    sm = st.session_state["suggest_maps"]
+    if key_bucket not in sm:
+        sm[key_bucket] = {}
+    return sm[key_bucket]
 
 # -------- Proveedores --------
 def provider_google_autocomplete(query: str, max_results: int = 8):
@@ -122,7 +129,7 @@ def suggest_addresses(query: str, key_bucket: str):
             clean.append(item)
     if not clean:
         return []
-    bucket = st.session_state.suggest_maps.setdefault(key_bucket, {})
+    bucket = _bucket_for(key_bucket)
     labels = []
     for label, meta in clean:
         bucket[label] = meta
@@ -133,7 +140,7 @@ def resolve_selection(label: str, key_bucket: str):
     """Devuelve siempre address (texto). Si hay meta de Google, añade open_now/coords."""
     if not label:
         return {"address": "", "lat": None, "lng": None, "open_now": None}
-    meta = st.session_state.suggest_maps.get(key_bucket, {}).get(label)
+    meta = st.session_state.get("suggest_maps", {}).get(key_bucket, {}).get(label)
     if not meta:
         return {"address": label, "lat": None, "lng": None, "open_now": None}
     if meta.get("provider") == "google" and meta.get("place_id"):
