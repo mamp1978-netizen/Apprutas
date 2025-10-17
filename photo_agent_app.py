@@ -1,29 +1,32 @@
-from urllib.parse import quote_plus
-from tab_profesional import mostrar_profesional
-from tab_viajero import mostrar_viajero
-from tab_turistico import mostrar_turistico
+import streamlit as st
 
-def build_gmaps_url(origin: str, destination: str, waypoints=None, *, mode="driving", avoid=None, optimize=True):
-    """
-    origin, destination: direcciones en texto
-    waypoints: lista de paradas intermedias (texto)
-    mode: driving | walking | bicycling | transit
-    avoid: lista de strings: {"tolls","highways","ferries","indoor"}
-    optimize: si True y hay varios waypoints, deja que Google los optimice (optimize:true)
-    """
-    base = "https://www.google.com/maps/dir/?api=1"
-    parts = [
-        f"origin={quote_plus(origin)}",
-        f"destination={quote_plus(destination)}",
-        f"travelmode={mode}"
-    ]
-    if avoid:
-        parts.append(f"avoid={quote_plus(','.join(avoid))}")
+st.set_page_config(page_title="Planificador de Rutas", page_icon="🗺️", layout="wide")
+st.set_option("client.showErrorDetails", True)
 
-    if waypoints:
-        wp = "|".join(waypoints)
-        if optimize and len(waypoints) > 1:
-            wp = f"optimize:true|{wp}"
-        parts.append(f"waypoints={quote_plus(wp)}")
+st.markdown("# 🗺️ Planificador de Rutas")
+st.caption("Crea rutas con paradas usando direcciones completas. La última parada puede ser el destino final.")
 
-    return base + "&" + "&".join(parts)
+def _safe_import(modname, funcname):
+    try:
+        mod = __import__(modname, fromlist=[funcname])
+        return getattr(mod, funcname)
+    except Exception as e:
+        st.error(f"Error cargando `{modname}.{funcname}`")
+        st.exception(e)
+        return lambda: st.stop()
+
+mostrar_profesional = _safe_import("tab_profesional", "mostrar_profesional")
+mostrar_viajero     = _safe_import("tab_viajero", "mostrar_viajero")
+mostrar_turistico   = _safe_import("tab_turistico", "mostrar_turistico")
+
+tabs = st.tabs(["🧰 Profesional", "🧳 Viajero", "🏖️ Turístico"])
+with tabs[0]:
+    mostrar_profesional()
+with tabs[1]:
+    mostrar_viajero()
+with tabs[2]:
+    mostrar_turistico()
+
+st.divider()
+st.caption("Autocompletado: Google Places / SerpAPI / Nominatim (OSM). "
+           "Añade tus claves en .env o st.secrets (`GOOGLE_PLACES_API_KEY`, `SERPAPI_API_KEY`).")

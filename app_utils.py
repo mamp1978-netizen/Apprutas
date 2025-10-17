@@ -6,7 +6,7 @@ import streamlit as st
 import qrcode
 from dotenv import load_dotenv
 
-# ----------------- Carga .env -----------------
+# -------- Carga .env --------
 load_dotenv()
 
 def _get_key(name: str):
@@ -24,7 +24,7 @@ REQUEST_TIMEOUT = 8
 if "suggest_maps" not in st.session_state:
     st.session_state.suggest_maps = {}
 
-# ----------------- Proveedores -----------------
+# -------- Proveedores --------
 def provider_google_autocomplete(query: str, max_results: int = 8):
     if not GOOGLE_PLACES_API_KEY or not query:
         return []
@@ -110,21 +110,18 @@ def get_place_coords_from_google(place_id: str):
         print("Google details error:", e)
         return {}
 
-# ----------------- Autocompletado unificado -----------------
+# -------- Autocompletado unificado --------
 def suggest_addresses(query: str, key_bucket: str):
     q = (query or "").strip()
     if len(q) < 2:
         return []
-    # proveedores en cascada
     results = provider_google_autocomplete(q) or provider_serpapi_maps(q) or provider_nominatim(q) or []
-    # limpiar a [(label, meta), ...]
     clean = []
     for item in results:
         if isinstance(item, (list, tuple)) and item and isinstance(item[0], str):
             clean.append(item)
     if not clean:
         return []
-    # guardar en bucket
     bucket = st.session_state.suggest_maps.setdefault(key_bucket, {})
     labels = []
     for label, meta in clean:
@@ -146,9 +143,8 @@ def resolve_selection(label: str, key_bucket: str):
     return {"address": meta.get("desc") or label, "lat": meta.get("lat"),
             "lng": meta.get("lng"), "open_now": meta.get("open_now")}
 
-# ----------------- UI: input con searchbox -----------------
+# -------- Input con searchbox (fallback seguro) --------
 def address_input(label: str, key: str):
-    """Autocompletar con streamlit-searchbox; fallback a text_input si falla."""
     try:
         from streamlit_searchbox import st_searchbox
         return st_searchbox(
@@ -162,14 +158,14 @@ def address_input(label: str, key: str):
         print("searchbox error:", e)
         return st.text_input(label, key=f"text_{key}", placeholder="Escribe la dirección completa…")
 
-# ----------------- Link de Google Maps + QR -----------------
+# -------- URL Google Maps + QR --------
 def build_gmaps_url(origin: str, destination: str, waypoints=None, *, mode="driving", avoid=None, optimize=True):
     """
     origin, destination: direcciones en texto
-    waypoints: lista de paradas intermedias (texto)
+    waypoints: lista de paradas intermedias
     mode: driving | walking | bicycling | transit
     avoid: lista de strings: {"tolls","highways","ferries","indoor"}
-    optimize: si True y hay varios waypoints, deja que Google los optimice (optimize:true)
+    optimize: si True y hay varios waypoints, 'optimize:true' para que Google los reordene
     """
     base = "https://www.google.com/maps/dir/?api=1"
     parts = [
@@ -179,13 +175,11 @@ def build_gmaps_url(origin: str, destination: str, waypoints=None, *, mode="driv
     ]
     if avoid:
         parts.append(f"avoid={quote_plus(','.join(avoid))}")
-
     if waypoints:
         wp = "|".join(waypoints)
         if optimize and len(waypoints) > 1:
             wp = f"optimize:true|{wp}"
         parts.append(f"waypoints={quote_plus(wp)}")
-
     return base + "&" + "&".join(parts)
 
 def make_qr(url: str) -> BytesIO:
