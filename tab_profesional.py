@@ -28,7 +28,7 @@ def _ip_location_to_address() -> str | None:
         print("ip->address error:", e)
         return None
 
-# ---------- Añadir / Eliminar ----------
+# ---------- Acciones de lista ----------
 def _add_point(value: str | None):
     value = (value or "").strip()
     if not value:
@@ -51,27 +51,37 @@ def _remove_point(idx: int):
         removed = st.session_state.prof_points.pop(idx)
         st.info(f"🗑️ Eliminado: {removed}")
 
-# ---------- Widget: buscador con sugerencias + ENTER ----------
-def search_and_add(block_key: str, label: str = "Buscar dirección…"):
-    """
-    Muestra un FORM; al pulsar ENTER añade la primera sugerencia si existe,
-    en caso contrario añade el texto tal cual.
-    """
-    with st.form(key=f"{block_key}_form", clear_on_submit=True):
-        q = st.text_input(label, key=f"{block_key}_q", placeholder="Calle, número, ciudad…")
-        # Sugerencias en vivo (al teclear rerenderiza)
-        suggestions = suggest_addresses(q, block_key) if q else []
+def _move_point(idx: int, direction: str):
+    pts = st.session_state.prof_points
+    if direction == "up" and idx > 0:
+        pts[idx-1], pts[idx] = pts[idx], pts[idx-1]
+    elif direction == "down" and idx < len(pts) - 1:
+        pts[idx+1], pts[idx] = pts[idx], pts[idx+1]
+
+# ---------- Barra de búsqueda con sugerencias + ENTER ----------
+def search_and_add_top():
+    with st.form(key="prof_top_form", clear_on_submit=True):
+        q = st.text_input("Buscar dirección… (pulsa ENTER para añadir)", key="prof_top_q",
+                          placeholder="Calle, número, ciudad…")
+        # Sugerencias en vivo
+        suggestions = suggest_addresses(q, "prof_top") if q else []
         if suggestions:
             st.caption("Sugerencias:")
-            # Mostramos solo las 6 primeras para no saturar
-            for i, s in enumerate(suggestions[:6]):
+            for s in suggestions[:6]:
                 st.write(f"• {s}")
-        submitted = st.form_submit_button("Añadir (ENTER)")
+        c1, c2 = st.columns([0.7, 0.3])
+        with c1:
+            submitted = st.form_submit_button("Añadir (ENTER)")
+        with c2:
+            loc = st.form_submit_button("📍 Usar mi ubicación")
+
         if submitted:
             if suggestions:
-                _add_point(suggestions[0])  # primera sugerencia
+                _add_point(suggestions[0])   # toma la primera sugerencia
             else:
-                _add_point(q)               # texto tal cual
+                _add_point(q)                 # añade el texto tal cual
+        if loc:
+            _add_point_from_location()
 
 # ---------- UI principal ----------
 def mostrar_profesional():
@@ -79,8 +89,9 @@ def mostrar_profesional():
 
     st.subheader("Ruta de trabajo")
     st.caption(
-        "Crea tu lista de puntos: el **primero** será el **origen**, el **último** el **destino**, "
-        "y los demás serán **paradas intermedias**."
+        "Crea tu lista de puntos con **una sola barra**: el **primero** será el **origen**, "
+        "el **último** el **destino**, y los demás serán **paradas intermedias**. "
+        "Puedes reordenar con las flechas y eliminar cualquier punto."
     )
 
     st.selectbox(
@@ -88,46 +99,41 @@ def mostrar_profesional():
         ["Más rápido", "Más corto", "Evitar autopistas", "Evitar peajes", "Ruta panorámica"],
         key="prof_route_type"
     )
-    st.divider()
-
-    # Bloque superior para empezar
-    if not st.session_state.prof_points:
-        search_and_add("prof_top", "Buscar dirección… (pulsa ENTER para añadir)")
-        c1, c2 = st.columns([0.7, 0.3])
-        with c2:
-            if st.button("📍 Usar mi ubicación", use_container_width=True, key="loc_start"):
-                _add_point_from_location()
 
     st.divider()
 
-    # Lista de puntos
-    st.markdown("### Puntos de la ruta (orden de viaje)")
-    if not st.session_state.prof_points:
-        st.info("Aún no hay puntos. Añade uno arriba o usa 📍 Ubicación.")
+    # -------- Barra única arriba
+    search_and_add_top()
+
+    # -------- Lista compacta debajo
+    st.markdown("### Puntos de la ruta")
+    pts = st.session_state.prof_points
+    if not pts:
+        st.info("Añade al menos dos puntos (origen y destino) para generar la ruta.")
     else:
-        for i, p in enumerate(st.session_state.prof_points):
-            col_lbl, col_btn = st.columns([0.9, 0.1])
-            with col_lbl:
-                prefix = "Origen" if i == 0 else ("Destino" if i == len(st.session_state.prof_points) - 1 else f"Parada #{i}")
+        for i, p in enumerate(pts):
+            prefix = "Origen" if i == 0 else ("Destino" if i == len(pts) - 1 else f"Parada #{i}")
+            c_lbl, c_up, c_down, c_del = st.columns([0.76, 0.08, 0.08, 0.08])
+            with c_lbl:
                 st.write(f"**{prefix}:** {p}")
-            with col_btn:
-                st.button("🗑️", key=f"del_{i}", on_click=_remove_point, args=(i,), help="Eliminar este punto", use_container_width=True)
+            with c_up:
+                st.button("↑", key=f"up_{i}_{len(pts)}", on_click=_move_point, args=(i, "up"),
+                          disabled=(i == 0), use_container_width=True)
+            with c_down:
+                st.button("↓", key=f"down_{i}_{len(pts)}", on_click=_move_point, args=(i, "down"),
+                          disabled=(i == len(pts)-1), use_container_width=True)
+            with c_del:
+                st.button("🗑️", key=f"del_{i}_{len(pts)}", on_click=_remove_point, args=(i,),
+                          use_container_width=True)
 
-    # Bloque inferior para seguir añadiendo
-    if st.session_state.prof_points:
-        st.divider()
-        search_and_add("prof_bottom", "Añadir más puntos… (ENTER para añadir)")
-        c1, c2 = st.columns([0.7, 0.3])
-        with c2:
-            if st.button("📍 Ubicación", use_container_width=True, key="loc_bottom"):
-                _add_point_from_location()
+    st.divider()
 
+    # -------- Opciones extra y generar
     st.session_state.prof_open_check = st.checkbox(
         "Comprobar si los lugares están abiertos ahora (si hay datos de Google)",
         value=st.session_state.prof_open_check
     )
 
-    # Generar ruta
     if st.button("Generar ruta profesional", type="primary", key="btn_generar_prof"):
         pts = st.session_state.prof_points
         if len(pts) < 2:
@@ -195,7 +201,6 @@ def mostrar_profesional():
                     st.markdown(f"**{title}:** ℹ️ Sin datos – {addr}")
             _flagline("Destino", d)
 
-    # Última ruta
     if st.session_state.prof_last_route_url:
         with st.expander("Última ruta generada (esta sesión)", expanded=False):
             st.write(st.session_state.prof_last_route_url)
