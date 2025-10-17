@@ -1,5 +1,5 @@
-streamlit>=1.32
-requests>=2.31
-python-dotenv>=1.0
-qrcode[pil]>=7.4
-streamlit-searchbox>=0.1.6
+streamlit
+requests
+python-dotenv
+qrcode
+streamlit-searchbox
