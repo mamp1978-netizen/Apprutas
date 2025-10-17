@@ -2,490 +2,314 @@
 from urllib.parse import quote_plus
 from io import BytesIO
 from datetime import datetime
-import os, re, requests
-
-import qrcode
-import streamlit as st
-import streamlit.components.v1 as components
+import os
+import json
+import requests
 from dotenv import load_dotenv
+
+import streamlit as st
 from streamlit_searchbox import st_searchbox
+import qrcode
 
-origin_prof_full = st_searchbox(
-    "Dirección completa (origen)",
-    key="prof_origin_search"
-)
+# -----------------------------
+# Config y utilidades generales
+# -----------------------------
+load_dotenv()  # lee variables desde .env si existe
 
-# =========================
-# Variables de entorno
-# =========================
-load_dotenv()
-SERPAPI_KEY = os.getenv("SERPAPI_KEY")                 # SerpApi (Google)
-OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY") # OpenWeather (clima)
+st.set_page_config(page_title="Planificador de Rutas", page_icon="🗺️", layout="wide")
 
-# =========================
-# Configuración + estilos
-# =========================
-st.set_page_config(page_title="Planificador de Rutas", layout="wide")
-st.markdown("""
-<style>
-:root{
-  --primary:#2563EB; --primary-dark:#1E40AF;
-  --text:#0f172a; --muted:#6b7280;
-  --bg:#F9FAFB; --card:#FFFFFF; --border:#E5E7EB;
-}
-html, body, [data-testid="stAppViewContainer"] { background: var(--bg); color: var(--text); }
-h1,h2,h3 { font-weight: 800; letter-spacing: -0.01em; }
-.section-card{ background:var(--card); border:1px solid var(--border);
-  border-radius:16px; padding:1.25rem; box-shadow:0 2px 12px rgba(0,0,0,0.04);}
-div.stButton > button {
-  background: var(--primary); color:#fff; border:none; border-radius:12px;
-  padding:0.8rem 1rem; font-weight:700;
-}
-div.stButton > button:hover { background: var(--primary-dark); }
-button[kind="secondary"]{
-  background:#fff !important; color:var(--text) !important; border:1px solid var(--border) !important;
-}
-.helper{ color:var(--muted); font-size:0.9rem; }
-.badge{ display:inline-block; padding:.2rem .5rem; border-radius:999px; border:1px solid var(--border); color:var(--muted); }
-</style>
-""", unsafe_allow_html=True)
-
-# =========================
-# Utilidades base (rutas / QR)
-# =========================
-def generate_maps_url(origin: str, stops: list[str], mode_label: str = "Conduciendo") -> str:
-    if not origin or not stops: return ""
-    origin_q = quote_plus(origin.strip())
-    cleaned = [s.strip() for s in stops if s and s.strip()]
-    if not cleaned: return ""
-    destination_q = quote_plus(cleaned[-1])
-    waypoints_q = "|".join(quote_plus(s) for s in cleaned[:-1])
-    mode_map = {"Conduciendo":"driving","Caminando":"walking","Bicicleta":"bicycling","Transporte Público":"transit",
-                "driving":"driving","walking":"walking","bicycling":"bicycling","transit":"transit"}
-    travel = mode_map.get(mode_label, "driving")
-    url = f"https://www.google.com/maps/dir/?api=1&origin={origin_q}&destination={destination_q}"
-    if waypoints_q: url += f"&waypoints={waypoints_q}"
-    url += f"&travelmode={travel}"
-    return url
-
-def show_qr_for(url: str):
-    if not url: return
-    buf = BytesIO(); qrcode.make(url).save(buf, format="PNG")
-    st.image(buf.getvalue(), caption="Escanéalo para abrir la ruta", use_column_width=False)
-    st.download_button("⬇️ Descargar QR (PNG)", buf.getvalue(),
-                       f"ruta_{datetime.now().strftime('%Y%m%d_%H%M')}.png", "image/png", key=f"dl_qr_{hash(url)}")
-
-# =========================
-# SerpApi helpers (autocomplete + lugares + open/close)
-# =========================
-def _parse_latlon(text: str):
-    if not text: return None
-    m = re.match(r'\s*(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)\s*', text)
-    if m: return float(m.group(1)), float(m.group(3))
-    return None
-
-def serpapi_maps(query: str, origin_text: str = "", engine: str = "google_maps", extra=None, lang="es"):
-    if not SERPAPI_KEY: return {"error": "Falta SERPAPI_KEY"}
-    params = {"engine": engine, "api_key": SERPAPI_KEY, "hl": lang}
-    if engine == "google_maps":
-        params["q"] = query
-        coords = _parse_latlon(origin_text)
-        if coords: params["ll"] = f"@{coords[0]},{coords[1]},14z"
-    elif engine == "google_autocomplete":
-        params["q"] = query
-    if extra: params.update(extra)
+def get_key(name: str) -> str | None:
+    # Prioriza st.secrets si existe, luego variables de entorno
     try:
-        r = requests.get("https://serpapi.com/search.json", params=params, timeout=20)
-        if r.status_code != 200: return {"error": f"HTTP {r.status_code}"}
-        return r.json()
-    except Exception as e:
-        return {"error": str(e)}
-
-def serpapi_first_place(query: str, origin_text: str = "", lang="es"):
-    data = serpapi_maps(query, origin_text, engine="google_maps", lang=lang)
-    if "place_results" in data and isinstance(data["place_results"], dict):
-        return data["place_results"]
-    if "local_results" in data and data["local_results"]:
-        return data["local_results"][0]
-    return {}
-
-def extract_open_now(place: dict):
-    if not place or (isinstance(place, dict) and place.get("error")):
-        return ("desconocido", "Sin datos de horario")
-    text_fields = []
-    for k in ("opening_hours", "hours", "open_state", "status"):
-        v = place.get(k)
-        if isinstance(v, str): text_fields.append(v)
-    text = " | ".join(text_fields).lower()
-    if any(x in text for x in ["abierto ahora", "open ⋅", "open now", "abierto"]): return ("abierto", text_fields[0] if text_fields else "Abierto ahora")
-    if any(x in text for x in ["cerrado", "closed"]): return ("cerrado", text_fields[0] if text_fields else "Cerrado")
-    if place.get("open_now") is True: return ("abierto", "Abierto ahora")
-    if place.get("open_now") is False: return ("cerrado", "Cerrado")
-    return ("desconocido", "Horario no disponible")
-
-def check_open_status_for_list(origin_text: str, stops: list[str], lang: str = "es"):
-    resultados = []
-    for stop in stops:
-        place = serpapi_first_place(stop, origin_text, lang=lang)
-        nombre = place.get("title") or place.get("name") or stop
-        direccion = place.get("address") or place.get("description") or ""
-        estado, detalle = extract_open_now(place)
-        resultados.append((nombre, direccion, estado, detalle))
-    return resultados
-
-def serpapi_autocomplete_suggestions(partial: str):
-    if not partial.strip(): return []
-    data = serpapi_maps(partial, engine="google_autocomplete")
-    suggestions = []
-    for s in data.get("suggestions", []):
-        txt = s.get("suggestion")
-        if txt and txt not in suggestions:
-            suggestions.append(txt)
-    return suggestions[:10]
-
-def serpapi_tourist_spots(city: str, radius_km: int = 10, max_results: int = 10):
-    if not city.strip(): return []
-    queries = [
-        f"puntos turísticos en {city}",
-        f"monumentos en {city}",
-        f"museos en {city}",
-        f"lugares emblemáticos en {city}"
-    ]
-    vistos, results = set(), []
-    for q in queries:
-        data = serpapi_maps(q, engine="google_maps")
-        for item in data.get("local_results", []):
-            title = item.get("title")
-            addr = item.get("address") or item.get("description")
-            if not title or (title, addr) in vistos: continue
-            vistos.add((title, addr))
-            results.append(title if addr is None else f"{title}, {addr}")
-            if len(results) >= max_results: break
-        if len(results) >= max_results: break
-    return results
-
-# =========================
-# Geocodificación inversa (coord -> dirección)
-# =========================
-def reverse_geocode_to_address(lat: float, lon: float) -> str:
-    try:
-        resp = requests.get(
-            "https://nominatim.openstreetmap.org/reverse",
-            params={"lat": lat, "lon": lon, "format": "jsonv2", "addressdetails": 1},
-            headers={"User-Agent": "apprutas/1.0"}
-        )
-        if resp.status_code != 200: return f"{lat:.6f}, {lon:.6f}"
-        data = resp.json()
-        return data.get("display_name") or f"{lat:.6f}, {lon:.6f}"
+        if name in st.secrets:
+            return st.secrets[name]
     except Exception:
-        return f"{lat:.6f}, {lon:.6f}"
+        pass
+    return os.getenv(name)
 
-def resolve_origin_text(text: str) -> str:
-    coords = _parse_latlon(text)
-    if coords:
-        lat, lon = coords
-        return reverse_geocode_to_address(lat, lon)
-    return (text or "").strip()
+GOOGLE_PLACES_API_KEY = get_key("GOOGLE_PLACES_API_KEY")
+SERPAPI_API_KEY = get_key("SERPAPI_API_KEY") or get_key("SERPAPI_KEY")
 
-# =========================
-# OpenWeather – clima
-# =========================
-def get_weather_for(place_text: str, lang="es"):
-    if not OPENWEATHER_API_KEY: return {"error": "Falta OPENWEATHER_API_KEY"}
-    city = place_text.split(",")[0].strip() if place_text else ""
-    if not city: return {"error": "Ciudad vacía"}
-    url = "https://api.openweathermap.org/data/2.5/weather"
-    params = {"q": city, "appid": OPENWEATHER_API_KEY, "units": "metric", "lang": lang}
+# Session placeholders para mapas de sugerencias
+if "suggest_maps" not in st.session_state:
+    st.session_state.suggest_maps = {}
+
+# -----------------------------
+# Proveedores de direcciones
+# -----------------------------
+def provider_google_autocomplete(query: str, max_results: int = 8):
+    """Devuelve [(label, {'provider':'google','place_id':..., 'desc':...})]"""
+    if not GOOGLE_PLACES_API_KEY:
+        return []
+    url = (
+        "https://maps.googleapis.com/maps/api/place/autocomplete/json"
+        f"?input={quote_plus(query)}&types=geocode&language=es&key={GOOGLE_PLACES_API_KEY}"
+    )
+    r = requests.get(url, timeout=10)
+    r.raise_for_status()
+    data = r.json()
+    out = []
+    for p in data.get("predictions", [])[:max_results]:
+        desc = p.get("description")
+        place_id = p.get("place_id")
+        if desc and place_id:
+            out.append((desc, {"provider": "google", "place_id": place_id, "desc": desc}))
+    return out
+
+def provider_serpapi_maps(query: str, max_results: int = 8):
+    """Fallback con SerpAPI Google Maps search."""
+    if not SERPAPI_API_KEY:
+        return []
+    url = (
+        "https://serpapi.com/search.json?"
+        f"engine=google_maps&q={quote_plus(query)}&hl=es&api_key={SERPAPI_API_KEY}"
+    )
+    r = requests.get(url, timeout=10)
+    r.raise_for_status()
+    js = r.json()
+    results = js.get("local_results") or []
+    out = []
+    for it in results[:max_results]:
+        title = it.get("title") or ""
+        address = it.get("address") or ""
+        desc = f"{title} – {address}".strip(" –")
+        gps = it.get("gps_coordinates") or {}
+        lat, lng = gps.get("latitude"), gps.get("longitude")
+        open_now = None
+        if isinstance(it.get("opening_status"), str):
+            open_now = True if "Abierto" in it["opening_status"] else False if "Cerrado" in it["opening_status"] else None
+        if desc and lat and lng:
+            out.append((desc, {
+                "provider": "serpapi",
+                "lat": lat, "lng": lng,
+                "desc": desc,
+                "open_now": open_now
+            }))
+    return out
+
+def provider_nominatim(query: str, max_results: int = 8):
+    """Último recurso gratuito (OSM). Respetar uso responsable."""
+    url = (
+        "https://nominatim.openstreetmap.org/search?"
+        f"q={quote_plus(query)}&format=json&addressdetails=0&limit={max_results}"
+    )
+    headers = {"User-Agent": "PlanificadorRutas/1.0 (streamlit app)"}
+    r = requests.get(url, headers=headers, timeout=10)
+    r.raise_for_status()
+    arr = r.json()
+    out = []
+    for it in arr[:max_results]:
+        desc = it.get("display_name")
+        lat, lng = it.get("lat"), it.get("lon")
+        if desc and lat and lng:
+            out.append((desc, {
+                "provider": "nominatim",
+                "lat": float(lat), "lng": float(lng),
+                "desc": desc
+            }))
+    return out
+
+def get_place_coords_from_google(place_id: str):
+    url = (
+        "https://maps.googleapis.com/maps/api/place/details/json"
+        f"?place_id={quote_plus(place_id)}&fields=geometry,opening_hours,formatted_address,name"
+        f"&language=es&key={GOOGLE_PLACES_API_KEY}"
+    )
+    r = requests.get(url, timeout=10)
+    r.raise_for_status()
+    data = r.json().get("result", {})
+    geo = data.get("geometry", {}).get("location", {})
+    lat, lng = geo.get("lat"), geo.get("lng")
+    open_now = data.get("opening_hours", {}).get("open_now")
+    address = data.get("formatted_address") or data.get("name")
+    return {"lat": lat, "lng": lng, "open_now": open_now, "desc": address}
+
+# -----------------------------
+# Sugeridor unificado
+# -----------------------------
+def suggest_addresses(query: str, key_bucket: str):
+    """Devuelve una lista de textos para el searchbox y guarda metadata en session_state."""
+    suggestions: list[tuple[str, dict]] = []
+    # Orden de preferencia: Google -> SerpAPI -> Nominatim
     try:
-        r = requests.get(url, params=params, timeout=15)
-        if r.status_code != 200: return {"error": f"HTTP {r.status_code}"}
-        d = r.json()
-        desc = (d.get("weather") or [{}])[0].get("description", "").capitalize()
-        temp = d.get("main", {}).get("temp")
-        feels = d.get("main", {}).get("feels_like")
-        wind = d.get("wind", {}).get("speed")
-        return {"city": city, "desc": desc, "temp": temp, "feels": feels, "wind": wind}
-    except Exception as e:
-        return {"error": str(e)}
+        suggestions = provider_google_autocomplete(query) or []
+    except Exception:
+        suggestions = suggestions or []
+    try:
+        if not suggestions:
+            suggestions = provider_serpapi_maps(query) or []
+    except Exception:
+        pass
+    if not suggestions:
+        try:
+            suggestions = provider_nominatim(query) or []
+        except Exception:
+            suggestions = []
 
-def weather_list(stops: list[str]):
-    rows = []
-    for s in stops:
-        w = get_weather_for(s)
-        if "error" in w:
-            rows.append(f"🌥️ {s} — {w['error']}")
-        else:
-            rows.append(f"🌥️ {w['city']}: {w['desc']}, {w['temp']}°C (sensación {w['feels']}°C), viento {w['wind']} m/s")
-    return rows
+    # Guardar metadatos por label
+    bucket = st.session_state.suggest_maps.setdefault(key_bucket, {})
+    labels = []
+    for label, meta in suggestions:
+        bucket[label] = meta
+        labels.append(label)
+    return labels
 
-# =========================
-# UI helpers (botón ubicación)
-# =========================
-def location_button_for(label_text: str):
-    components.html(f"""
-<div style="margin: 0 0 10px 0;">
-  <button onclick="getLoc()" style="
-    padding:9px 12px;border-radius:10px;border:1px solid #d1d5db;background:#fff;cursor:pointer;font-weight:700">
-    🎯 Usar mi ubicación
-  </button>
-  <span style="color:#6b7280;font-size:12px;margin-left:8px;">(el navegador pedirá permiso)</span>
-</div>
-<script>
-function writeToInput(value){{
-  const inputs = window.parent.document.querySelectorAll('input');
-  for (const el of inputs){{
-    const aria = (el.getAttribute('aria-label')||"");
-    const ph = (el.getAttribute('placeholder')||"");
-    if (aria.includes("{label_text}") || ph.toLowerCase().includes("punto de partida") || ph.toLowerCase().includes("ciudad o ubicación") || ph.toLowerCase().includes("dirección completa (origen)")){{
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-      setter.call(el, value);
-      el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-      break;
-    }}
-  }}
-}}
-function getLoc(){{
-  if (!navigator.geolocation){{ alert("Tu navegador no soporta geolocalización."); return; }}
-  navigator.geolocation.getCurrentPosition(
-    (pos)=>{{ const v = pos.coords.latitude.toFixed(6)+", "+pos.coords.longitude.toFixed(6); writeToInput(v); }},
-    (err)=>{{ alert("No se pudo obtener la ubicación: " + err.message); }},
-    {{ enableHighAccuracy:true, timeout:10000, maximumAge:0 }}
-  );
-}}
-</script>
-""", height=80)
+def resolve_selection(label: str, key_bucket: str):
+    """Dado un label seleccionado, resuelve lat/lng y estado abierto si procede."""
+    meta = st.session_state.suggest_maps.get(key_bucket, {}).get(label)
+    if not meta:
+        return {"address": label, "lat": None, "lng": None, "open_now": None, "provider": None}
 
-# =========================
-# Estado inicial
-# =========================
-if "stops_prof" not in st.session_state: st.session_state.stops_prof = ["Cliente 1, Barcelona", "Cliente 2, Barcelona"]
-if "stops_trip" not in st.session_state: st.session_state.stops_trip = ["Eiffel Tower, Paris", "Louvre Museum, Paris"]
-if "stops_tour" not in st.session_state: st.session_state.stops_tour = ["Sagrada Família", "Parc Güell", "Casa Batlló"]
+    provider = meta.get("provider")
+    if provider == "google":
+        det = get_place_coords_from_google(meta["place_id"])
+        return {"address": det.get("desc") or label, "lat": det["lat"], "lng": det["lng"],
+                "open_now": det.get("open_now"), "provider": "google"}
+    elif provider in ("serpapi", "nominatim"):
+        return {"address": meta.get("desc") or label, "lat": meta.get("lat"), "lng": meta.get("lng"),
+                "open_now": meta.get("open_now"), "provider": provider}
+    else:
+        return {"address": label, "lat": None, "lng": None, "open_now": None, "provider": None}
 
-# =========================
-# Cabecera y Pestañas
-# =========================
-st.title("🗺️ Planificador de Rutas")
-st.caption("Crea una ruta con paradas y ábrela en Google Maps. La **última parada** es el *destino final*.")
+# -----------------------------
+# UI Helpers
+# -----------------------------
+def address_input(label: str, key: str):
+    """Componente de búsqueda con autocompletado unificado."""
+    return st_searchbox(
+        search_function=lambda q: suggest_addresses(q, key_bucket=key),
+        label=label,
+        key=key,
+        default=None,
+        max_results_to_show=8
+    )
 
-tab1, tab2, tab3 = st.tabs(["👷 Profesional", "✈️ Viajero", "🏛️ Turístico"])
+def build_gmaps_url(origin: str, destination: str, waypoints: list[str] | None = None):
+    base = "https://www.google.com/maps/dir/?api=1"
+    params = [
+        f"origin={quote_plus(origin)}",
+        f"destination={quote_plus(destination)}",
+        "travelmode=driving"
+    ]
+    if waypoints:
+        params.append(f"waypoints={quote_plus('|'.join(waypoints))}")
+        params.append("optimize=true")
+    return f"{base}&" + "&".join(params)
 
-# ---------- 👷 PROFESIONAL ----------
-with tab1:
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+def make_qr(url: str) -> BytesIO:
+    qr = qrcode.QRCode(border=1, box_size=6)
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf
+
+# -----------------------------
+# Interfaz
+# -----------------------------
+st.markdown("# 🗺️ Planificador de Rutas")
+st.caption("Crea una ruta con paradas y autocompletado de direcciones. La última parada es el destino final.")
+
+tabs = st.tabs(["🧰 Profesional", "🧳 Viajero", "🏖️ Turístico"])
+
+with tabs[0]:
     st.subheader("Ruta de trabajo")
-    st.markdown('<span class="badge">Jornada</span> Planifica visitas a clientes, obras o inspecciones.', unsafe_allow_html=True)
+    st.help("Planifica visitas a clientes, obras o inspecciones. Usa direcciones completas.")
 
-    # Origen con AUTOCOMPLETADO (searchbox)
-    origin_prof_full = st_searchbox(
-        "Dirección completa (origen)",
-        search_function=serpapi_autocomplete_suggestions,
-        default=st.session_state.get("prof_origin", ""),
-        placeholder="Ej.: Gran Via 24, Madrid | Plaça Catalunya, Barcelona",
-        key="prof_origin_search"
-    )
-    if origin_prof_full:
-        st.session_state["prof_origin"] = origin_prof_full
-    location_button_for("Dirección completa (origen)")
-
-    # Paradas
-    st.markdown("**Paradas**")
-    new_stops = []
-    for i, stop in enumerate(st.session_state.stops_prof):
-        new_stops.append(st.text_input(f"Parada #{i+1}", value=stop, key=f"prof_stop_{i}"))
-    st.session_state.stops_prof = new_stops
-
-    col1, col2, col3, col4 = st.columns([1.2, 1.6, 2, 2])
+    col1, col2 = st.columns([1, 1])
     with col1:
-        st.button("➕ Añadir", key="btn_prof_add", type="secondary",
-                  on_click=lambda: st.session_state.stops_prof.append(""))
+        origin_label = address_input("Dirección completa (origen)", key="prof_origin_search")
     with col2:
-        st.button("➖ Quitar última", key="btn_prof_rm", type="secondary",
-                  on_click=lambda: st.session_state.stops_prof.pop() if st.session_state.stops_prof else None,
-                  disabled=len(st.session_state.stops_prof) <= 1)
-    with col3:
-        check_prof = st.button("🔔 Comprobar horarios (beta)", key="btn_prof_check")
-    with col4:
-        w_prof = st.button("🌦️ Ver clima", key="btn_prof_weather")
+        dest_label = address_input("Dirección completa (destino final)", key="prof_dest_search")
 
-    origin_prof_resolved = resolve_origin_text(st.session_state.get("prof_origin",""))
+    # Paradas intermedias (una por línea)
+    stops_txt = st.text_area("Paradas intermedias (una por línea)", height=120,
+                             placeholder="Cliente 1, Barcelona\nCliente 2, Girona\n...")
+    stops = [s.strip() for s in stops_txt.splitlines() if s.strip()]
 
-    if check_prof:
-        if not SERPAPI_KEY:
-            st.error("No está configurado SERPAPI_KEY.")
+    check_open = st.checkbox("Comprobar si los lugares están abiertos ahora (requiere Google Places)")
+
+    if st.button("Generar ruta"):
+        if not origin_label or not dest_label:
+            st.error("Indica al menos **origen** y **destino**.")
         else:
-            valid = [s.strip() for s in st.session_state.stops_prof if s.strip()]
-            if not origin_prof_resolved:
-                st.error("Introduce la dirección de origen o usa 🎯.")
-            elif not valid:
-                st.info("Añade paradas primero.")
-            else:
-                for nombre, direccion, estado, detalle in check_open_status_for_list(origin_prof_resolved, valid):
-                    if estado == "abierto":
-                        st.success(f"✅ {nombre} — {detalle}\n\n{direccion}")
-                    elif estado == "cerrado":
-                        st.warning(f"⚠️ {nombre} — {detalle}\n\n{direccion}")
+            # Resolver a direcciones finales (y lat/lng si procede)
+            origin = resolve_selection(origin_label, "prof_origin_search")
+            dest = resolve_selection(dest_label, "prof_dest_search")
+            waypoints_resolved = []
+            open_status = []
+
+            for i, stop in enumerate(stops):
+                meta = resolve_selection(stop, "prof_origin_search")  # usamos el mismo bucket como cache lirgera
+                waypoints_resolved.append(meta["address"])
+                if check_open and GOOGLE_PLACES_API_KEY and meta.get("provider") == "google":
+                    # Si la resolución vino de Google Details, ya trae open_now
+                    if meta["open_now"] is not None:
+                        open_status.append((meta["address"], meta["open_now"]))
                     else:
-                        st.info(f"ℹ️ {nombre} — {detalle}\n\n{direccion}")
+                        open_status.append((meta["address"], None))
 
-    if w_prof:
-        valid = [s.strip() for s in st.session_state.stops_prof if s.strip()]
-        for line in weather_list(valid): st.write(line)
+            url = build_gmaps_url(origin["address"], dest["address"], waypoints_resolved if waypoints_resolved else None)
+            st.success("Ruta generada")
+            st.write(url)
 
-    mode_prof = st.radio("Modo", ["Conduciendo","Transporte Público","Caminando","Bicicleta"], horizontal=True, key="prof_mode")
-    if st.button("Generar ruta (Profesional)", key="btn_prof_generate"):
-        valid = [s.strip() for s in st.session_state.stops_prof if s.strip()]
-        valid = list(dict.fromkeys(valid))
-        if not origin_prof_resolved:
-            st.error("Introduce la dirección de origen o usa 🎯.")
-        elif not valid:
-            st.warning("Añade al menos una parada.")
-        else:
-            url = generate_maps_url(origin_prof_resolved, valid, mode_prof)
-            st.success("¡Ruta generada!")
-            st.markdown(f"[▶️ Abrir en Google Maps]({url})")
-            st.text_input("Enlace", url, label_visibility="collapsed", key="prof_link")
-            show_qr_for(url)
-    st.markdown('</div>', unsafe_allow_html=True)
+            # QR
+            qr_buf = make_qr(url)
+            st.image(qr_buf, caption="Escanea para abrir la ruta en el móvil", use_column_width=False)
 
-# ---------- ✈️ VIAJERO ----------
-with tab2:
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
-    st.subheader("Viajero (itinerario conocido)")
-    st.markdown('<span class="badge">Importar</span> Pega tus destinos (una línea por parada).', unsafe_allow_html=True)
-
-    origin_trip = st_searchbox(
-        "Punto de partida",
-        search_function=serpapi_autocomplete_suggestions,
-        default=st.session_state.get("trip_origin", ""),
-        placeholder="Ej.: Aeropuerto de Barcelona",
-        key="trip_origin_search"
-    )
-    if origin_trip:
-        st.session_state["trip_origin"] = origin_trip
-    location_button_for("Punto de partida")
-
-    lista = st.text_area("Paradas", value="\n".join(st.session_state.stops_trip), height=120, key="trip_list")
-    if st.button("Aplicar lista", key="btn_trip_apply"):
-        st.session_state.stops_trip = [s.strip() for s in lista.splitlines() if s.strip()]
-
-    col1, col2, col3 = st.columns([1.2, 1.6, 2])
-    with col1:
-        mode_trip = st.selectbox("Modo", ["Conduciendo","Transporte Público","Caminando","Bicicleta"], key="trip_mode")
-    with col2:
-        go_trip = st.button("Generar ruta (Viajero)", key="btn_trip_generate")
-    with col3:
-        check_trip = st.button("🔔 Comprobar horarios (beta)", key="btn_trip_check")
-    st.write("")
-    if st.button("🌦️ Ver clima (Viajero)", key="btn_trip_weather"):
-        valid = [s.strip() for s in st.session_state.stops_trip if s.strip()]
-        for line in weather_list(valid): st.write(line)
-
-    if check_trip:
-        if not SERPAPI_KEY:
-            st.error("No está configurado SERPAPI_KEY.")
-        else:
-            valid = [s.strip() for s in st.session_state.stops_trip if s.strip()]
-            if not valid:
-                st.info("Añade paradas primero.")
-            else:
-                for nombre, direccion, estado, detalle in check_open_status_for_list(origin_trip, valid):
-                    if estado == "abierto":
-                        st.success(f"✅ {nombre} — {detalle}\n\n{direccion}")
-                    elif estado == "cerrado":
-                        st.warning(f"⚠️ {nombre} — {detalle}\n\n{direccion}")
+            # Info de apertura
+            if check_open and GOOGLE_PLACES_API_KEY and open_status:
+                st.subheader("Estado de apertura (en este momento)")
+                for addr, is_open in open_status:
+                    if is_open is True:
+                        st.markdown(f"✅ **Abierto** – {addr}")
+                    elif is_open is False:
+                        st.markdown(f"⛔ **Cerrado** – {addr}")
                     else:
-                        st.info(f"ℹ️ {nombre} — {detalle}\n\n{direccion}")
+                        st.markdown(f"ℹ️ **Sin datos** – {addr}")
 
-    if go_trip:
-        valid = [s.strip() for s in st.session_state.stops_trip if s.strip()]
-        valid = list(dict.fromkeys(valid))
-        if not origin_trip:
-            st.error("Introduce el origen o usa 🎯.")
-        elif not valid:
-            st.warning("Añade al menos una parada.")
+with tabs[1]:
+    st.subheader("Plan rápido (viajero)")
+    o = address_input("Origen", key="trav_origin")
+    d = address_input("Destino", key="trav_dest")
+    if st.button("Crear ruta (viajero)"):
+        if not o or not d:
+            st.error("Falta origen o destino.")
         else:
-            url = generate_maps_url(origin_trip, valid, mode_trip)
-            st.success("¡Ruta generada!")
-            st.markdown(f"[▶️ Abrir en Google Maps]({url})")
-            st.text_input("Enlace", url, label_visibility="collapsed", key="trip_link")
-            show_qr_for(url)
-    st.markdown('</div>', unsafe_allow_html=True)
+            o_res = resolve_selection(o, "trav_origin")
+            d_res = resolve_selection(d, "trav_dest")
+            url = build_gmaps_url(o_res["address"], d_res["address"])
+            st.success("Ruta generada")
+            st.write(url)
+            st.image(make_qr(url), caption="QR de la ruta")
 
-# ---------- 🏛️ TURÍSTICO ----------
-with tab3:
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
-    st.subheader("Turístico (descubre y elige)")
-    st.markdown('<span class="badge">Explorar</span> Indica tu ubicación o ciudad y selecciona lugares emblemáticos.', unsafe_allow_html=True)
+with tabs[2]:
+    st.subheader("Ruta turística con varias paradas")
+    o = address_input("Punto de inicio", key="tour_origin")
+    d = address_input("Punto final", key="tour_dest")
+    spots = st.text_area("Lugares a visitar (uno por línea)", height=120,
+                         placeholder="Sagrada Familia, Barcelona\nParc Güell, Barcelona\nCasa Batlló, Barcelona\n...")
+    stops = [s.strip() for s in spots.splitlines() if s.strip()]
 
-    origin_tour = st_searchbox(
-        "Ciudad o ubicación",
-        search_function=serpapi_autocomplete_suggestions,
-        default=st.session_state.get("tour_origin", ""),
-        placeholder="Ej.: Barcelona, España",
-        key="tour_origin_search"
-    )
-    if origin_tour:
-        st.session_state["tour_origin"] = origin_tour
-    location_button_for("Ciudad o ubicación")
-
-    radius_km = st.slider("Radio de acción (km)", 1, 30, 10, key="tour_radius")
-
-    if st.button("✨ Sugerir lugares emblemáticos", key="btn_tour_suggest"):
-        if not SERPAPI_KEY:
-            st.error("Falta SERPAPI_KEY.")
-        elif not origin_tour:
-            st.error("Introduce una ciudad o usa 🎯.")
+    if st.button("Crear itinerario turístico"):
+        if not o or not d:
+            st.error("Indica inicio y final.")
         else:
-            sugeridos = serpapi_tourist_spots(origin_tour, radius_km, max_results=10)
-            if sugeridos:
-                st.session_state.stops_tour = sugeridos
-                st.success(f"Se sugirieron {len(sugeridos)} lugares.")
-            else:
-                st.info("No se encontraron lugares. Prueba con otra ciudad.")
+            o_res = resolve_selection(o, "tour_origin")
+            d_res = resolve_selection(d, "tour_dest")
+            wp = [resolve_selection(s, "tour_origin")["address"] for s in stops] if stops else None
+            url = build_gmaps_url(o_res["address"], d_res["address"], [w for w in wp] if wp else None)
+            st.success("Itinerario listo")
+            st.write(url)
+            st.image(make_qr(url), caption="QR del itinerario")
 
-    chosen = st.multiselect("Elige lugares", st.session_state.stops_tour,
-                            default=st.session_state.stops_tour[: min(3, len(st.session_state.stops_tour))],
-                            key="tour_chosen")
-
-    col1, col2, col3 = st.columns([1.2, 1.6, 2])
-    with col1:
-        mode_tour = st.radio("Modo", ["Conduciendo","Transporte Público","Caminando","Bicicleta"],
-                             horizontal=True, key="tour_mode")
-    with col2:
-        go_tour = st.button("Generar ruta (Turístico)", key="btn_tour_generate")
-    with col3:
-        check_tour = st.button("🔔 Comprobar horarios (beta)", key="btn_tour_check")
-    st.write("")
-    if st.button("🌦️ Ver clima (Turístico)", key="btn_tour_weather"):
-        for line in weather_list(chosen): st.write(line)
-
-    if check_tour:
-        if not SERPAPI_KEY:
-            st.error("No está configurado SERPAPI_KEY.")
-        else:
-            valid = [s.strip() for s in chosen if s.strip()]
-            if not valid:
-                st.info("Selecciona lugares primero.")
-            else:
-                for nombre, direccion, estado, detalle in check_open_status_for_list(origin_tour, valid):
-                    if estado == "abierto":
-                        st.success(f"✅ {nombre} — {detalle}\n\n{direccion}")
-                    elif estado == "cerrado":
-                        st.warning(f"⚠️ {nombre} — {detalle}\n\n{direccion}")
-                    else:
-                        st.info(f"ℹ️ {nombre} — {detalle}\n\n{direccion}")
-
-    if go_tour:
-        valid = [s.strip() for s in chosen if s.strip()]
-        if not origin_tour:
-            st.error("Introduce una ciudad/ubicación o usa 🎯.")
-        elif not valid:
-            st.warning("Selecciona al menos un lugar.")
-        else:
-            url = generate_maps_url(origin_tour, valid, mode_tour)
-            st.success("¡Ruta generada!")
-            st.markdown(f"[▶️ Abrir en Google Maps]({url})")
-            st.text_input("Enlace", url, label_visibility="collapsed", key="tour_link")
-            show_qr_for(url)
-    st.markdown('</div>', unsafe_allow_html=True)
+# -----------------------------
+# Pie informativo
+# -----------------------------
+st.divider()
+st.caption(
+    "Consejo: añade tus claves en .env o st.secrets (`GOOGLE_PLACES_API_KEY`, `SERPAPI_API_KEY`). "
+    "Sin claves, el autocompletado usará Nominatim (OSM)."
+)
