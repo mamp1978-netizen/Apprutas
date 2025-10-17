@@ -1,6 +1,6 @@
 import streamlit as st
 import requests
-from app_utils import suggest_addresses, resolve_selection, build_gmaps_url, make_qr
+from aplicación_utils import suggest_addresses, resolve_selection, build_gmaps_url, make_qr
 
 # ---------- Estado ----------
 def _init_state():

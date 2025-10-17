@@ -1,5 +1,5 @@
 import streamlit as st
-from app_utils import resolve_selection, build_gmaps_url, make_qr
+from aplicación_utils import resolve_selection, build_gmaps_url, make_qr
 
 def mostrar_viajero():
     st.subheader("Plan rápido (viajero)")
