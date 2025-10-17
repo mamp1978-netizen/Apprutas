@@ -1,6 +1,6 @@
 import streamlit as st
 import requests
-from app_utils import address_input, resolve_selection, build_gmaps_url, make_qr
+from app_utils import suggest_addresses, resolve_selection, build_gmaps_url, make_qr
 
 # ---------- Estado ----------
 def _init_state():
@@ -14,8 +14,6 @@ def _init_state():
         st.session_state.prof_last_location_guess = ""
     if "prof_route_type" not in st.session_state:
         st.session_state.prof_route_type = "Más rápido"
-    if "prof_add_point_last" not in st.session_state:
-        st.session_state.prof_add_point_last = None
 
 # ---------- IP -> dirección aproximada ----------
 def _ip_location_to_address() -> str | None:
@@ -30,7 +28,7 @@ def _ip_location_to_address() -> str | None:
         print("ip->address error:", e)
         return None
 
-# ---------- Acciones ----------
+# ---------- Añadir / Eliminar ----------
 def _add_point(value: str | None):
     value = (value or "").strip()
     if not value:
@@ -53,6 +51,28 @@ def _remove_point(idx: int):
         removed = st.session_state.prof_points.pop(idx)
         st.info(f"🗑️ Eliminado: {removed}")
 
+# ---------- Widget: buscador con sugerencias + ENTER ----------
+def search_and_add(block_key: str, label: str = "Buscar dirección…"):
+    """
+    Muestra un FORM; al pulsar ENTER añade la primera sugerencia si existe,
+    en caso contrario añade el texto tal cual.
+    """
+    with st.form(key=f"{block_key}_form", clear_on_submit=True):
+        q = st.text_input(label, key=f"{block_key}_q", placeholder="Calle, número, ciudad…")
+        # Sugerencias en vivo (al teclear rerenderiza)
+        suggestions = suggest_addresses(q, block_key) if q else []
+        if suggestions:
+            st.caption("Sugerencias:")
+            # Mostramos solo las 6 primeras para no saturar
+            for i, s in enumerate(suggestions[:6]):
+                st.write(f"• {s}")
+        submitted = st.form_submit_button("Añadir (ENTER)")
+        if submitted:
+            if suggestions:
+                _add_point(suggestions[0])  # primera sugerencia
+            else:
+                _add_point(q)               # texto tal cual
+
 # ---------- UI principal ----------
 def mostrar_profesional():
     _init_state()
@@ -70,31 +90,17 @@ def mostrar_profesional():
     )
     st.divider()
 
-    def add_block():
-        st.markdown("**Añadir punto a la ruta**")
-        new_point = address_input("Buscar dirección… (pulsa ENTER para añadir)", "prof_add_point")
-        # ENTER/cambio de valor: lo añadimos
-        if new_point and st.session_state.prof_add_point_last != new_point:
-            st.session_state.prof_add_point_last = new_point
-            _add_point(new_point)
-
-        c_add, c_loc = st.columns([0.7, 0.3])
-        with c_add:
-            if st.button("➕ Añadir punto", use_container_width=True, key=f"add_top_{len(st.session_state.prof_points)}"):
-                _add_point(new_point)
-        with c_loc:
-            if st.button("📍 Ubicación", use_container_width=True, key=f"loc_top_{len(st.session_state.prof_points)}"):
-                _add_point_from_location()
-
-        if st.session_state.prof_last_location_guess:
-            st.caption(f"Última ubicación detectada: {st.session_state.prof_last_location_guess}")
-
-    # Mostrar bloque para añadir al principio si no hay puntos
+    # Bloque superior para empezar
     if not st.session_state.prof_points:
-        add_block()
+        search_and_add("prof_top", "Buscar dirección… (pulsa ENTER para añadir)")
+        c1, c2 = st.columns([0.7, 0.3])
+        with c2:
+            if st.button("📍 Usar mi ubicación", use_container_width=True, key="loc_start"):
+                _add_point_from_location()
 
     st.divider()
 
+    # Lista de puntos
     st.markdown("### Puntos de la ruta (orden de viaje)")
     if not st.session_state.prof_points:
         st.info("Aún no hay puntos. Añade uno arriba o usa 📍 Ubicación.")
@@ -107,22 +113,13 @@ def mostrar_profesional():
             with col_btn:
                 st.button("🗑️", key=f"del_{i}", on_click=_remove_point, args=(i,), help="Eliminar este punto", use_container_width=True)
 
-    # Repetimos bloque al final para seguir añadiendo
+    # Bloque inferior para seguir añadiendo
     if st.session_state.prof_points:
         st.divider()
-        # Bloque inferior con claves distintas para que no se mezclen los botones
-        st.markdown("**Añadir más puntos**")
-        new_point2 = address_input("Buscar dirección… (pulsa ENTER para añadir)", "prof_add_point_bottom")
-        if new_point2 and st.session_state.prof_add_point_last != new_point2:
-            st.session_state.prof_add_point_last = new_point2
-            _add_point(new_point2)
-
-        c_add2, c_loc2 = st.columns([0.7, 0.3])
-        with c_add2:
-            if st.button("➕ Añadir punto", use_container_width=True, key=f"add_bottom_{len(st.session_state.prof_points)}"):
-                _add_point(new_point2)
-        with c_loc2:
-            if st.button("📍 Ubicación", use_container_width=True, key=f"loc_bottom_{len(st.session_state.prof_points)}"):
+        search_and_add("prof_bottom", "Añadir más puntos… (ENTER para añadir)")
+        c1, c2 = st.columns([0.7, 0.3])
+        with c2:
+            if st.button("📍 Ubicación", use_container_width=True, key="loc_bottom"):
                 _add_point_from_location()
 
     st.session_state.prof_open_check = st.checkbox(
@@ -130,7 +127,7 @@ def mostrar_profesional():
         value=st.session_state.prof_open_check
     )
 
-    # ---------- Generar ruta ----------
+    # Generar ruta
     if st.button("Generar ruta profesional", type="primary", key="btn_generar_prof"):
         pts = st.session_state.prof_points
         if len(pts) < 2:
@@ -198,7 +195,7 @@ def mostrar_profesional():
                     st.markdown(f"**{title}:** ℹ️ Sin datos – {addr}")
             _flagline("Destino", d)
 
-    # ---------- Última ruta ----------
+    # Última ruta
     if st.session_state.prof_last_route_url:
         with st.expander("Última ruta generada (esta sesión)", expanded=False):
             st.write(st.session_state.prof_last_route_url)

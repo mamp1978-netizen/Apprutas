@@ -143,30 +143,8 @@ def resolve_selection(label: str, key_bucket: str):
     return {"address": meta.get("desc") or label, "lat": meta.get("lat"),
             "lng": meta.get("lng"), "open_now": meta.get("open_now")}
 
-# -------- Input con searchbox (fallback seguro) --------
-def address_input(label: str, key: str):
-    try:
-        from streamlit_searchbox import st_searchbox
-        return st_searchbox(
-            search_function=lambda q: suggest_addresses(q, key),
-            label=label,
-            key=key,
-            default=None
-        )
-    except Exception as e:
-        st.warning("Autocompletado no disponible; usando campo de texto simple.")
-        print("searchbox error:", e)
-        return st.text_input(label, key=f"text_{key}", placeholder="Escribe la dirección completa…")
-
 # -------- URL Google Maps + QR --------
 def build_gmaps_url(origin: str, destination: str, waypoints=None, *, mode="driving", avoid=None, optimize=True):
-    """
-    origin, destination: direcciones en texto
-    waypoints: lista de paradas intermedias
-    mode: driving | walking | bicycling | transit
-    avoid: lista de strings: {"tolls","highways","ferries","indoor"}
-    optimize: si True y hay varios waypoints, 'optimize:true' para que Google los reordene
-    """
     base = "https://www.google.com/maps/dir/?api=1"
     parts = [
         f"origin={quote_plus(origin)}",
@@ -175,11 +153,13 @@ def build_gmaps_url(origin: str, destination: str, waypoints=None, *, mode="driv
     ]
     if avoid:
         parts.append(f"avoid={quote_plus(','.join(avoid))}")
+
     if waypoints:
         wp = "|".join(waypoints)
         if optimize and len(waypoints) > 1:
             wp = f"optimize:true|{wp}"
         parts.append(f"waypoints={quote_plus(wp)}")
+
     return base + "&" + "&".join(parts)
 
 def make_qr(url: str) -> BytesIO:
