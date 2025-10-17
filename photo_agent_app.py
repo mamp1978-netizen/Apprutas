@@ -8,13 +8,14 @@ import qrcode
 import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
+from streamlit_searchbox import st_searchbox  # ⬅️ Autocompletado
 
 # =========================
 # Variables de entorno
 # =========================
 load_dotenv()
-SERPAPI_KEY = os.getenv("SERPAPI_KEY")
-OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+SERPAPI_KEY = os.getenv("SERPAPI_KEY")                 # SerpApi (Google)
+OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY") # OpenWeather (clima)
 
 # =========================
 # Configuración + estilos
@@ -45,7 +46,7 @@ button[kind="secondary"]{
 """, unsafe_allow_html=True)
 
 # =========================
-# Utilidades base
+# Utilidades base (rutas / QR)
 # =========================
 def generate_maps_url(origin: str, stops: list[str], mode_label: str = "Conduciendo") -> str:
     if not origin or not stops: return ""
@@ -67,10 +68,10 @@ def show_qr_for(url: str):
     buf = BytesIO(); qrcode.make(url).save(buf, format="PNG")
     st.image(buf.getvalue(), caption="Escanéalo para abrir la ruta", use_column_width=False)
     st.download_button("⬇️ Descargar QR (PNG)", buf.getvalue(),
-                       f"ruta_{datetime.now().strftime('%Y%m%d_%H%M')}.png", "image/png", key="dl_qr")
+                       f"ruta_{datetime.now().strftime('%Y%m%d_%H%M')}.png", "image/png", key=f"dl_qr_{hash(url)}")
 
 # =========================
-# SerpApi helpers
+# SerpApi helpers (autocomplete + lugares + open/close)
 # =========================
 def _parse_latlon(text: str):
     if not text: return None
@@ -135,7 +136,7 @@ def serpapi_autocomplete_suggestions(partial: str):
         txt = s.get("suggestion")
         if txt and txt not in suggestions:
             suggestions.append(txt)
-    return suggestions[:7]
+    return suggestions[:10]
 
 def serpapi_tourist_spots(city: str, radius_km: int = 10, max_results: int = 10):
     if not city.strip(): return []
@@ -213,7 +214,7 @@ def weather_list(stops: list[str]):
     return rows
 
 # =========================
-# UI helpers (ubicación)
+# UI helpers (botón ubicación)
 # =========================
 def location_button_for(label_text: str):
     components.html(f"""
@@ -270,29 +271,17 @@ with tab1:
     st.subheader("Ruta de trabajo")
     st.markdown('<span class="badge">Jornada</span> Planifica visitas a clientes, obras o inspecciones.', unsafe_allow_html=True)
 
-    # Origen (barra única)
-    origin_prof_full = st.text_input(
+    # Origen con AUTOCOMPLETADO (searchbox)
+    origin_prof_full = st_searchbox(
         "Dirección completa (origen)",
+        search_function=serpapi_autocomplete_suggestions,
+        default=st.session_state.get("prof_origin", ""),
         placeholder="Ej.: Gran Via 24, Madrid | Plaça Catalunya, Barcelona",
-        key="prof_origin"
+        key="prof_origin_search"
     )
+    if origin_prof_full:
+        st.session_state["prof_origin"] = origin_prof_full
     location_button_for("Dirección completa (origen)")
-
-    # Autocompletar
-    with st.expander("🔎 Autocompletar origen (SerpApi)"):
-        partial = st.text_input("Escribe para buscar", placeholder="Ej.: Gran Via 24, Madrid", key="prof_auto_input")
-        if st.button("Buscar sugerencias (Profesional)", key="btn_prof_auto_search"):
-            if not SERPAPI_KEY:
-                st.error("Falta SERPAPI_KEY.")
-            else:
-                sugs = serpapi_autocomplete_suggestions(partial)
-                if sugs:
-                    choice = st.selectbox("Elige una sugerencia", sugs, key="prof_auto_choice")
-                    if st.button("Usar sugerencia", key="btn_prof_auto_use"):
-                        st.session_state["prof_origin"] = choice
-                        st.rerun()
-                else:
-                    st.info("Sin sugerencias.")
 
     # Paradas
     st.markdown("**Paradas**")
@@ -360,17 +349,16 @@ with tab2:
     st.subheader("Viajero (itinerario conocido)")
     st.markdown('<span class="badge">Importar</span> Pega tus destinos (una línea por parada).', unsafe_allow_html=True)
 
-    origin_trip = st.text_input("Punto de partida", placeholder="Ej.: Aeropuerto de Barcelona", key="trip_origin")
+    origin_trip = st_searchbox(
+        "Punto de partida",
+        search_function=serpapi_autocomplete_suggestions,
+        default=st.session_state.get("trip_origin", ""),
+        placeholder="Ej.: Aeropuerto de Barcelona",
+        key="trip_origin_search"
+    )
+    if origin_trip:
+        st.session_state["trip_origin"] = origin_trip
     location_button_for("Punto de partida")
-
-    with st.expander("🔎 Autocompletar origen (SerpApi)"):
-        partial2 = st.text_input("Escribe para buscar (Viajero)", placeholder="Ej.: Plaça Catalunya, Barcelona", key="trip_auto_input")
-        if st.button("Buscar sugerencias (Viajero)", key="btn_trip_auto_search"):
-            if not SERPAPI_KEY:
-                st.error("Falta SERPAPI_KEY.")
-            else:
-                sugs = serpapi_autocomplete_suggestions(partial2)
-                st.write(sugs if sugs else "Sin sugerencias.")
 
     lista = st.text_area("Paradas", value="\n".join(st.session_state.stops_trip), height=120, key="trip_list")
     if st.button("Aplicar lista", key="btn_trip_apply"):
@@ -425,24 +413,23 @@ with tab3:
     st.subheader("Turístico (descubre y elige)")
     st.markdown('<span class="badge">Explorar</span> Indica tu ubicación o ciudad y selecciona lugares emblemáticos.', unsafe_allow_html=True)
 
-    origin_tour = st.text_input("Ciudad o ubicación", placeholder="Ej.: Barcelona, España", key="tour_origin")
+    origin_tour = st_searchbox(
+        "Ciudad o ubicación",
+        search_function=serpapi_autocomplete_suggestions,
+        default=st.session_state.get("tour_origin", ""),
+        placeholder="Ej.: Barcelona, España",
+        key="tour_origin_search"
+    )
+    if origin_tour:
+        st.session_state["tour_origin"] = origin_tour
     location_button_for("Ciudad o ubicación")
-
-    with st.expander("🔎 Autocompletar ciudad (SerpApi)"):
-        partial3 = st.text_input("Buscar ciudad", placeholder="Ej.: Sevilla, España", key="tour_auto_input")
-        if st.button("Buscar sugerencias (Turístico)", key="btn_tour_auto_search"):
-            if not SERPAPI_KEY:
-                st.error("Falta SERPAPI_KEY.")
-            else:
-                sugs = serpapi_autocomplete_suggestions(partial3)
-                st.write(sugs if sugs else "Sin sugerencias.")
 
     radius_km = st.slider("Radio de acción (km)", 1, 30, 10, key="tour_radius")
 
     if st.button("✨ Sugerir lugares emblemáticos", key="btn_tour_suggest"):
         if not SERPAPI_KEY:
             st.error("Falta SERPAPI_KEY.")
-        elif not origin_tour.strip():
+        elif not origin_tour:
             st.error("Introduce una ciudad o usa 🎯.")
         else:
             sugeridos = serpapi_tourist_spots(origin_tour, radius_km, max_results=10)
@@ -466,13 +453,13 @@ with tab3:
         check_tour = st.button("🔔 Comprobar horarios (beta)", key="btn_tour_check")
     st.write("")
     if st.button("🌦️ Ver clima (Turístico)", key="btn_tour_weather"):
-        for line in weather_list(st.session_state.get("tour_chosen", [])): st.write(line)
+        for line in weather_list(chosen): st.write(line)
 
     if check_tour:
         if not SERPAPI_KEY:
             st.error("No está configurado SERPAPI_KEY.")
         else:
-            valid = [s.strip() for s in st.session_state.get("tour_chosen", []) if s.strip()]
+            valid = [s.strip() for s in chosen if s.strip()]
             if not valid:
                 st.info("Selecciona lugares primero.")
             else:
@@ -485,7 +472,7 @@ with tab3:
                         st.info(f"ℹ️ {nombre} — {detalle}\n\n{direccion}")
 
     if go_tour:
-        valid = [s.strip() for s in st.session_state.get("tour_chosen", []) if s.strip()]
+        valid = [s.strip() for s in chosen if s.strip()]
         if not origin_tour:
             st.error("Introduce una ciudad/ubicación o usa 🎯.")
         elif not valid:

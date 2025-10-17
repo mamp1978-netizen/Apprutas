@@ -4,3 +4,4 @@ google-genai
 google-api-python-client
 qrcode[pil]
 python-dotenv
+streamlit-searchbox
