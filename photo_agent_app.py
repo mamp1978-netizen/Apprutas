@@ -161,14 +161,13 @@ def resolve_selection(label: str, key_bucket: str):
 def address_input(label: str, key: str):
     """Caja de búsqueda robusta."""
     try:
-        return st_searchbox(
-            search_function=lambda q: suggest_addresses(q, key),
-            label=label,
-            key=key,
-            default=None,
-            max_results_to_show=8
-        )
-    except Exception as e:
+    return st_searchbox(
+        search_function=lambda q: suggest_addresses(q, key),
+        label=label,
+        key=key,
+        default=None
+    )
+except Exception as e:
         st.error(f"Error en búsqueda: {e}")
         return None
 
