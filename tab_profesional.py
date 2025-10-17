@@ -1,4 +1,3 @@
-# tab_profesional.py
 import streamlit as st
 import requests
 from app_utils import address_input, resolve_selection, build_gmaps_url, make_qr
@@ -14,7 +13,9 @@ def _init_state():
     if "prof_last_location_guess" not in st.session_state:
         st.session_state.prof_last_location_guess = ""
     if "prof_route_type" not in st.session_state:
-        st.session_state.prof_route_type = "Más rápido"  # valor por defecto
+        st.session_state.prof_route_type = "Más rápido"
+    if "prof_add_point_last" not in st.session_state:
+        st.session_state.prof_add_point_last = None  # para detectar ENTER/cambio
 
 # --------------------- Ubicación por IP ---------------------
 def _ip_location_to_address() -> str | None:
@@ -71,30 +72,32 @@ def mostrar_profesional():
 
     st.divider()
 
-    # ---------- Barra única para añadir puntos ----------
-    st.markdown("**Añadir punto a la ruta**")
-    new_point = address_input("Buscar dirección… (pulsa ENTER para añadir)", "prof_add_point")
-
-    # Detectar si se pulsó ENTER (streamlit detecta cambios en el estado del campo)
-    if new_point and st.session_state.get("prof_add_point_last") != new_point:
-        st.session_state.prof_add_point_last = new_point
-        _add_point(new_point)
-
-    # Botón de ubicación justo debajo
-    c_add, c_loc = st.columns([0.7, 0.3])
-    with c_add:
-        if st.button("➕ Añadir punto", use_container_width=True):
+    # ---------- Bloque 'añadir punto' (arriba si no hay puntos) ----------
+    def add_block():
+        st.markdown("**Añadir punto a la ruta**")
+        new_point = address_input("Buscar dirección… (pulsa ENTER para añadir)", "prof_add_point")
+        # ENTER / cambio de valor: lo añadimos automáticamente
+        if new_point and st.session_state.prof_add_point_last != new_point:
+            st.session_state.prof_add_point_last = new_point
             _add_point(new_point)
-    with c_loc:
-        if st.button("📍 Ubicación", use_container_width=True):
-            _add_point_from_location()
 
-    if st.session_state.prof_last_location_guess:
-        st.caption(f"Última ubicación detectada: {st.session_state.prof_last_location_guess}")
+        c_add, c_loc = st.columns([0.7, 0.3])
+        with c_add:
+            if st.button("➕ Añadir punto", use_container_width=True):
+                _add_point(new_point)
+        with c_loc:
+            if st.button("📍 Ubicación", use_container_width=True):
+                _add_point_from_location()
+
+        if st.session_state.prof_last_location_guess:
+            st.caption(f"Última ubicación detectada: {st.session_state.prof_last_location_guess}")
+
+    if not st.session_state.prof_points:
+        add_block()
 
     st.divider()
 
-    # ---------- Lista de puntos actuales ----------
+    # ---------- Lista de puntos ----------
     st.markdown("### Puntos de la ruta (orden de viaje)")
     if not st.session_state.prof_points:
         st.info("Aún no hay puntos. Añade uno arriba o usa 📍 Ubicación.")
@@ -107,9 +110,10 @@ def mostrar_profesional():
             with col_btn:
                 st.button("🗑️", key=f"del_{i}", on_click=_remove_point, args=(i,), help="Eliminar este punto", use_container_width=True)
 
-    # Botón de añadir vuelve a aparecer al final
-    st.divider()
-    st.button("➕ Añadir nuevo punto aquí", on_click=lambda: None, use_container_width=True, key="bottom_button_dummy")
+    # ---------- Repetimos bloque 'añadir' al final cuando ya hay puntos ----------
+    if st.session_state.prof_points:
+        st.divider()
+        add_block()
 
     st.session_state.prof_open_check = st.checkbox(
         "Comprobar si los lugares están abiertos ahora (si hay datos de Google)",
@@ -138,22 +142,30 @@ def mostrar_profesional():
             if st.session_state.prof_open_check:
                 open_report.append((f"Parada #{i}", det.get("address"), det.get("open_now")))
 
-        # Tipo de ruta
-        travel_mode = "driving"
-        route_pref = st.session_state.prof_route_type
-        if route_pref == "Ruta panorámica":
-            travel_mode = "bicycling"
-        elif route_pref == "Más corto":
-            travel_mode = "driving&avoid=tolls"
-        elif route_pref == "Evitar autopistas":
-            travel_mode = "driving&avoid=highways"
-        elif route_pref == "Evitar peajes":
-            travel_mode = "driving&avoid=tolls"
+        # Preferencias de ruta → parámetros URL
+        mode = "driving"
+        avoid = []
+        pref = st.session_state.prof_route_type
+        if pref == "Más corto":
+            avoid = ["tolls", "highways"]
+        elif pref == "Evitar autopistas":
+            avoid = ["highways"]
+        elif pref == "Evitar peajes":
+            avoid = ["tolls"]
+        elif pref == "Ruta panorámica":
+            mode = "bicycling"
 
-        url = build_gmaps_url(o["address"], d["address"], wp_resolved if wp_resolved else None)
+        url = build_gmaps_url(
+            o["address"],
+            d["address"],
+            wp_resolved if wp_resolved else None,
+            mode=mode,
+            avoid=avoid,
+            optimize=True
+        )
         st.session_state.prof_last_route_url = url
 
-        st.success(f"✅ Ruta generada ({route_pref})")
+        st.success(f"✅ Ruta generada ({pref})")
         st.write(url)
         st.image(make_qr(url), caption="Escanea para abrir la ruta en el móvil")
 
