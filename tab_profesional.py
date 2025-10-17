@@ -58,28 +58,26 @@ def _move_point(idx: int, direction: str):
     elif direction == "down" and idx < len(pts) - 1:
         pts[idx+1], pts[idx] = pts[idx], pts[idx+1]
 
-# ---------- Barra de búsqueda con sugerencias + ENTER ----------
+# ---------- Barra de búsqueda única (sugerencias + ENTER) ----------
 def search_and_add_top():
     with st.form(key="prof_top_form", clear_on_submit=True):
-        q = st.text_input("Buscar dirección… (pulsa ENTER para añadir)", key="prof_top_q",
+        q = st.text_input("Buscar dirección… (pulsa ENTER para añadir)",
+                          key="prof_top_q",
                           placeholder="Calle, número, ciudad…")
-        # Sugerencias en vivo
         suggestions = suggest_addresses(q, "prof_top") if q else []
         if suggestions:
             st.caption("Sugerencias:")
             for s in suggestions[:6]:
                 st.write(f"• {s}")
         c1, c2 = st.columns([0.7, 0.3])
-        with c1:
-            submitted = st.form_submit_button("Añadir (ENTER)")
-        with c2:
-            loc = st.form_submit_button("📍 Usar mi ubicación")
+        submitted = c1.form_submit_button("Añadir (ENTER)")
+        loc = c2.form_submit_button("📍 Usar mi ubicación")
 
         if submitted:
             if suggestions:
-                _add_point(suggestions[0])   # toma la primera sugerencia
+                _add_point(suggestions[0])   # primera sugerencia
             else:
-                _add_point(q)                 # añade el texto tal cual
+                _add_point(q)                 # texto tal cual
         if loc:
             _add_point_from_location()
 
@@ -89,9 +87,8 @@ def mostrar_profesional():
 
     st.subheader("Ruta de trabajo")
     st.caption(
-        "Crea tu lista de puntos con **una sola barra**: el **primero** será el **origen**, "
-        "el **último** el **destino**, y los demás serán **paradas intermedias**. "
-        "Puedes reordenar con las flechas y eliminar cualquier punto."
+        "Añade puntos con la barra de arriba. El **primero** es **origen**, el **último** es **destino**; "
+        "los demás son **paradas intermedias**. Puedes reordenar con las flechas y eliminar cualquier punto."
     )
 
     st.selectbox(
@@ -99,14 +96,13 @@ def mostrar_profesional():
         ["Más rápido", "Más corto", "Evitar autopistas", "Evitar peajes", "Ruta panorámica"],
         key="prof_route_type"
     )
-
     st.divider()
 
-    # -------- Barra única arriba
+    # --- ÚNICA barra arriba
     search_and_add_top()
 
-    # -------- Lista compacta debajo
-    st.markdown("### Puntos de la ruta")
+    # --- Lista compacta debajo (sin segundo formulario)
+    st.markdown("### Puntos de la ruta (orden de viaje)")
     pts = st.session_state.prof_points
     if not pts:
         st.info("Añade al menos dos puntos (origen y destino) para generar la ruta.")
@@ -128,7 +124,6 @@ def mostrar_profesional():
 
     st.divider()
 
-    # -------- Opciones extra y generar
     st.session_state.prof_open_check = st.checkbox(
         "Comprobar si los lugares están abiertos ahora (si hay datos de Google)",
         value=st.session_state.prof_open_check
