@@ -3,7 +3,6 @@ from urllib.parse import quote_plus
 from io import BytesIO
 from datetime import datetime
 import os
-import json
 import requests
 from dotenv import load_dotenv
 
@@ -11,15 +10,14 @@ import streamlit as st
 from streamlit_searchbox import st_searchbox
 import qrcode
 
-# -----------------------------
-# Config y utilidades generales
-# -----------------------------
+# -------------------------------------------------
+# Configuración general
+# -------------------------------------------------
 load_dotenv()  # lee variables desde .env si existe
-
 st.set_page_config(page_title="Planificador de Rutas", page_icon="🗺️", layout="wide")
 
-def get_key(name: str) -> str | None:
-    # Prioriza st.secrets si existe, luego variables de entorno
+def get_key(name: str):
+    """Obtiene una clave priorizando st.secrets y luego variables de entorno."""
     try:
         if name in st.secrets:
             return st.secrets[name]
@@ -30,15 +28,15 @@ def get_key(name: str) -> str | None:
 GOOGLE_PLACES_API_KEY = get_key("GOOGLE_PLACES_API_KEY")
 SERPAPI_API_KEY = get_key("SERPAPI_API_KEY") or get_key("SERPAPI_KEY")
 
-# Session placeholders para mapas de sugerencias
+# Pequeña caché de sugerencias por componente
 if "suggest_maps" not in st.session_state:
     st.session_state.suggest_maps = {}
 
-# -----------------------------
-# Proveedores de direcciones
-# -----------------------------
+# -------------------------------------------------
+# Proveedores de autocompletado / geocodificación
+# -------------------------------------------------
 def provider_google_autocomplete(query: str, max_results: int = 8):
-    """Devuelve [(label, {'provider':'google','place_id':..., 'desc':...})]"""
+    """Sugerencias desde Google Places Autocomplete."""
     if not GOOGLE_PLACES_API_KEY:
         return []
     url = (
@@ -57,7 +55,7 @@ def provider_google_autocomplete(query: str, max_results: int = 8):
     return out
 
 def provider_serpapi_maps(query: str, max_results: int = 8):
-    """Fallback con SerpAPI Google Maps search."""
+    """Sugerencias desde SerpAPI (Google Maps)."""
     if not SERPAPI_API_KEY:
         return []
     url = (
@@ -76,8 +74,12 @@ def provider_serpapi_maps(query: str, max_results: int = 8):
         gps = it.get("gps_coordinates") or {}
         lat, lng = gps.get("latitude"), gps.get("longitude")
         open_now = None
-        if isinstance(it.get("opening_status"), str):
-            open_now = True if "Abierto" in it["opening_status"] else False if "Cerrado" in it["opening_status"] else None
+        status = it.get("opening_status")
+        if isinstance(status, str):
+            if "Abierto" in status:
+                open_now = True
+            elif "Cerrado" in status:
+                open_now = False
         if desc and lat and lng:
             out.append((desc, {
                 "provider": "serpapi",
@@ -88,7 +90,7 @@ def provider_serpapi_maps(query: str, max_results: int = 8):
     return out
 
 def provider_nominatim(query: str, max_results: int = 8):
-    """Último recurso gratuito (OSM). Respetar uso responsable."""
+    """Último recurso gratuito (OpenStreetMap Nominatim)."""
     url = (
         "https://nominatim.openstreetmap.org/search?"
         f"q={quote_plus(query)}&format=json&addressdetails=0&limit={max_results}"
@@ -110,6 +112,7 @@ def provider_nominatim(query: str, max_results: int = 8):
     return out
 
 def get_place_coords_from_google(place_id: str):
+    """Detalles de un place_id de Google (coords + open_now)."""
     url = (
         "https://maps.googleapis.com/maps/api/place/details/json"
         f"?place_id={quote_plus(place_id)}&fields=geometry,opening_hours,formatted_address,name"
@@ -124,29 +127,27 @@ def get_place_coords_from_google(place_id: str):
     address = data.get("formatted_address") or data.get("name")
     return {"lat": lat, "lng": lng, "open_now": open_now, "desc": address}
 
-# -----------------------------
-# Sugeridor unificado
-# -----------------------------
+# -------------------------------------------------
+# Sugeridor unificado + resolución de selección
+# -------------------------------------------------
 def suggest_addresses(query: str, key_bucket: str):
-    """Devuelve una lista de textos para el searchbox y guarda metadata en session_state."""
-    suggestions: list[tuple[str, dict]] = []
-    # Orden de preferencia: Google -> SerpAPI -> Nominatim
+    """Devuelve labels de sugerencias y guarda metadatos por label en session_state."""
+    suggestions = []
     try:
         suggestions = provider_google_autocomplete(query) or []
     except Exception:
-        suggestions = suggestions or []
-    try:
-        if not suggestions:
-            suggestions = provider_serpapi_maps(query) or []
-    except Exception:
         pass
+    if not suggestions:
+        try:
+            suggestions = provider_serpapi_maps(query) or []
+        except Exception:
+            pass
     if not suggestions:
         try:
             suggestions = provider_nominatim(query) or []
         except Exception:
             suggestions = []
 
-    # Guardar metadatos por label
     bucket = st.session_state.suggest_maps.setdefault(key_bucket, {})
     labels = []
     for label, meta in suggestions:
@@ -155,9 +156,9 @@ def suggest_addresses(query: str, key_bucket: str):
     return labels
 
 def resolve_selection(label: str, key_bucket: str):
-    """Dado un label seleccionado, resuelve lat/lng y estado abierto si procede."""
+    """Resuelve una selección del searchbox a dirección + (lat/lng/open_now si procede)."""
     meta = st.session_state.suggest_maps.get(key_bucket, {}).get(label)
-    if not meta:
+    if not meta:  # si el usuario pegó una dirección manualmente
         return {"address": label, "lat": None, "lng": None, "open_now": None, "provider": None}
 
     provider = meta.get("provider")
@@ -168,14 +169,13 @@ def resolve_selection(label: str, key_bucket: str):
     elif provider in ("serpapi", "nominatim"):
         return {"address": meta.get("desc") or label, "lat": meta.get("lat"), "lng": meta.get("lng"),
                 "open_now": meta.get("open_now"), "provider": provider}
-    else:
-        return {"address": label, "lat": None, "lng": None, "open_now": None, "provider": None}
+    return {"address": label, "lat": None, "lng": None, "open_now": None, "provider": None}
 
-# -----------------------------
-# UI Helpers
-# -----------------------------
+# -------------------------------------------------
+# Helpers de UI / utilidades
+# -------------------------------------------------
 def address_input(label: str, key: str):
-    """Componente de búsqueda con autocompletado unificado."""
+    """Searchbox con proveedores en cascada."""
     return st_searchbox(
         search_function=lambda q: suggest_addresses(q, key_bucket=key),
         label=label,
@@ -184,7 +184,7 @@ def address_input(label: str, key: str):
         max_results_to_show=8
     )
 
-def build_gmaps_url(origin: str, destination: str, waypoints: list[str] | None = None):
+def build_gmaps_url(origin: str, destination: str, waypoints=None):
     base = "https://www.google.com/maps/dir/?api=1"
     params = [
         f"origin={quote_plus(origin)}",
@@ -206,17 +206,18 @@ def make_qr(url: str) -> BytesIO:
     buf.seek(0)
     return buf
 
-# -----------------------------
+# -------------------------------------------------
 # Interfaz
-# -----------------------------
+# -------------------------------------------------
 st.markdown("# 🗺️ Planificador de Rutas")
-st.caption("Crea una ruta con paradas y autocompletado de direcciones. La última parada es el destino final.")
+st.caption("Crea rutas con paradas usando direcciones completas. La última parada puede ser el destino final.")
 
 tabs = st.tabs(["🧰 Profesional", "🧳 Viajero", "🏖️ Turístico"])
 
+# ---- Profesional ----
 with tabs[0]:
     st.subheader("Ruta de trabajo")
-    st.help("Planifica visitas a clientes, obras o inspecciones. Usa direcciones completas.")
+    st.caption("Planifica visitas a clientes, obras o inspecciones. Usa direcciones completas.")
 
     col1, col2 = st.columns([1, 1])
     with col1:
@@ -224,9 +225,11 @@ with tabs[0]:
     with col2:
         dest_label = address_input("Dirección completa (destino final)", key="prof_dest_search")
 
-    # Paradas intermedias (una por línea)
-    stops_txt = st.text_area("Paradas intermedias (una por línea)", height=120,
-                             placeholder="Cliente 1, Barcelona\nCliente 2, Girona\n...")
+    stops_txt = st.text_area(
+        "Paradas intermedias (una por línea)",
+        height=140,
+        placeholder="Cliente 1, Barcelona\nCliente 2, Girona\n..."
+    )
     stops = [s.strip() for s in stops_txt.splitlines() if s.strip()]
 
     check_open = st.checkbox("Comprobar si los lugares están abiertos ahora (requiere Google Places)")
@@ -235,41 +238,29 @@ with tabs[0]:
         if not origin_label or not dest_label:
             st.error("Indica al menos **origen** y **destino**.")
         else:
-            # Resolver a direcciones finales (y lat/lng si procede)
             origin = resolve_selection(origin_label, "prof_origin_search")
             dest = resolve_selection(dest_label, "prof_dest_search")
-            waypoints_resolved = []
-            open_status = []
 
-            for i, stop in enumerate(stops):
-                meta = resolve_selection(stop, "prof_origin_search")  # usamos el mismo bucket como cache lirgera
-                waypoints_resolved.append(meta["address"])
-                if check_open and GOOGLE_PLACES_API_KEY and meta.get("provider") == "google":
-                    # Si la resolución vino de Google Details, ya trae open_now
-                    if meta["open_now"] is not None:
-                        open_status.append((meta["address"], meta["open_now"]))
-                    else:
-                        open_status.append((meta["address"], None))
+            # Las paradas se usan como texto; no es necesario resolver a lat/lng para Google Maps URL
+            waypoints_resolved = stops if stops else None
 
-            url = build_gmaps_url(origin["address"], dest["address"], waypoints_resolved if waypoints_resolved else None)
+            url = build_gmaps_url(origin["address"], dest["address"], waypoints_resolved)
             st.success("Ruta generada")
             st.write(url)
+            st.image(make_qr(url), caption="Escanea para abrir la ruta en el móvil")
 
-            # QR
-            qr_buf = make_qr(url)
-            st.image(qr_buf, caption="Escanea para abrir la ruta en el móvil", use_column_width=False)
-
-            # Info de apertura
-            if check_open and GOOGLE_PLACES_API_KEY and open_status:
-                st.subheader("Estado de apertura (en este momento)")
-                for addr, is_open in open_status:
-                    if is_open is True:
-                        st.markdown(f"✅ **Abierto** – {addr}")
-                    elif is_open is False:
-                        st.markdown(f"⛔ **Cerrado** – {addr}")
+            if check_open and GOOGLE_PLACES_API_KEY:
+                st.subheader("Estado de apertura (ahora)")
+                for label, keybucket in [(origin_label, "prof_origin_search"), (dest_label, "prof_dest_search")]:
+                    det = resolve_selection(label, keybucket)
+                    if det["open_now"] is True:
+                        st.markdown(f"✅ **Abierto** – {det['address']}")
+                    elif det["open_now"] is False:
+                        st.markdown(f"⛔ **Cerrado** – {det['address']}")
                     else:
-                        st.markdown(f"ℹ️ **Sin datos** – {addr}")
+                        st.markdown(f"ℹ️ **Sin datos** – {det['address']}")
 
+# ---- Viajero ----
 with tabs[1]:
     st.subheader("Plan rápido (viajero)")
     o = address_input("Origen", key="trav_origin")
@@ -285,13 +276,17 @@ with tabs[1]:
             st.write(url)
             st.image(make_qr(url), caption="QR de la ruta")
 
+# ---- Turístico ----
 with tabs[2]:
     st.subheader("Ruta turística con varias paradas")
     o = address_input("Punto de inicio", key="tour_origin")
     d = address_input("Punto final", key="tour_dest")
-    spots = st.text_area("Lugares a visitar (uno por línea)", height=120,
-                         placeholder="Sagrada Familia, Barcelona\nParc Güell, Barcelona\nCasa Batlló, Barcelona\n...")
-    stops = [s.strip() for s in spots.splitlines() if s.strip()]
+    spots = st.text_area(
+        "Lugares a visitar (uno por línea)",
+        height=140,
+        placeholder="Sagrada Familia, Barcelona\nParc Güell, Barcelona\nCasa Batlló, Barcelona\n..."
+    )
+    tour_stops = [s.strip() for s in spots.splitlines() if s.strip()]
 
     if st.button("Crear itinerario turístico"):
         if not o or not d:
@@ -299,17 +294,16 @@ with tabs[2]:
         else:
             o_res = resolve_selection(o, "tour_origin")
             d_res = resolve_selection(d, "tour_dest")
-            wp = [resolve_selection(s, "tour_origin")["address"] for s in stops] if stops else None
-            url = build_gmaps_url(o_res["address"], d_res["address"], [w for w in wp] if wp else None)
+            url = build_gmaps_url(o_res["address"], d_res["address"], tour_stops if tour_stops else None)
             st.success("Itinerario listo")
             st.write(url)
             st.image(make_qr(url), caption="QR del itinerario")
 
-# -----------------------------
-# Pie informativo
-# -----------------------------
+# -------------------------------------------------
+# Pie de página
+# -------------------------------------------------
 st.divider()
 st.caption(
     "Consejo: añade tus claves en .env o st.secrets (`GOOGLE_PLACES_API_KEY`, `SERPAPI_API_KEY`). "
-    "Sin claves, el autocompletado usará Nominatim (OSM)."
+    "Sin claves, el autocompletado usa Nominatim (OSM)."
 )
