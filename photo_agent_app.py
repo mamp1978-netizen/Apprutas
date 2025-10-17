@@ -162,14 +162,17 @@ def address_input(label: str, key: str):
     """Usa searchbox si está disponible; si no, text_input básico."""
     if DISABLE_AUTOCOMPLETE or not SEARCHBOX_OK:
         return st.text_input(label, key=f"text_{key}", placeholder="Escribe la dirección completa…")
+    
     try:
+        # Intentamos usar el autocompletado
         return st_searchbox(
             search_function=lambda q: suggest_addresses(q, key),
             label=label,
             key=key,
-            default=None  # NO usar max_results_to_show para compatibilidad
+            default=None  # compatible con versiones antiguas de streamlit-searchbox
         )
     except Exception as e:
+        # Si algo falla, se usa un input normal
         st.warning("Autocompletado desactivado por error; usando modo básico.")
         print("st_searchbox runtime error:", e)
         return st.text_input(label, key=f"text_{key}", placeholder="Escribe la dirección completa…")
