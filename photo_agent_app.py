@@ -159,14 +159,20 @@ def resolve_selection(label: str, key_bucket: str):
 # UI HELPERS
 # -------------------------------------------------
 def address_input(label: str, key: str):
-    """Caja de búsqueda robusta."""
+    """Usa searchbox si está disponible; si no, text_input básico."""
+    if DISABLE_AUTOCOMPLETE or not SEARCHBOX_OK:
+        return st.text_input(label, key=f"text_{key}", placeholder="Escribe la dirección completa…")
     try:
-    return st_searchbox(
-        search_function=lambda q: suggest_addresses(q, key),
-        label=label,
-        key=key,
-        default=None
-    )
+        return st_searchbox(
+            search_function=lambda q: suggest_addresses(q, key),
+            label=label,
+            key=key,
+            default=None  # NO usar max_results_to_show para compatibilidad
+        )
+    except Exception as e:
+        st.warning("Autocompletado desactivado por error; usando modo básico.")
+        print("st_searchbox runtime error:", e)
+        return st.text_input(label, key=f"text_{key}", placeholder="Escribe la dirección completa…")
 except Exception as e:
         st.error(f"Error en búsqueda: {e}")
         return None
