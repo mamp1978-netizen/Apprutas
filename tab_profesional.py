@@ -1,39 +1,35 @@
 # tab_profesional.py
 import streamlit as st
 import requests
+from streamlit_searchbox import st_searchbox
 
 from app_utils import (
     suggest_addresses,
     resolve_selection,
     build_gmaps_url,
     make_qr,
-    set_location_bias,  # sesgo geográfico para Google Autocomplete
+    set_location_bias,          # sesgo para Google
+    provider_google_autocomplete # lo usamos para el autocompletado vivo
 )
 
-# ---------------------------
-# Utilidades de esta pestaña
-# ---------------------------
-def _ip_location_to_latlng() -> tuple[float | None, float | None, str]:
-    """
-    Devuelve (lat, lng, location_str) a partir de la IP (servicio ipapi.co).
-    Si falla, devuelve (None, None, "").
-    """
+# ---------------- utilidades ----------------
+
+def _ip_location_to_address() -> str | None:
     try:
         ip = requests.get("https://ipapi.co/json/", timeout=6).json()
-        lat = ip.get("latitude")
-        lng = ip.get("longitude")
         city = ip.get("city") or ""
         region = ip.get("region") or ""
         country = ip.get("country_name") or ""
         s = ", ".join([x for x in (city, region, country) if x])
-        return lat, lng, s
-    except Exception:
-        return None, None, ""
+        return s or None
+    except Exception as e:
+        print("ip->address error:", e)
+        return None
 
 def _remove_point(idx: int, t: dict):
     if 0 <= idx < len(st.session_state.prof_points):
         removed = st.session_state.prof_points.pop(idx)
-        st.info(t.get("removed", "Eliminado: {x}").format(x=removed))
+        st.info(t["removed"].format(x=removed))
 
 def _move_point(idx: int, direction: str):
     pts = st.session_state.prof_points
@@ -42,196 +38,156 @@ def _move_point(idx: int, direction: str):
     elif direction == "down" and idx < len(pts) - 1:
         pts[idx+1], pts[idx] = pts[idx], pts[idx+1]
 
-def _init_state():
-    st.session_state.setdefault("prof_points", [])
-    st.session_state.setdefault("prof_last_route_url", None)
-    st.session_state.setdefault("prof_open_check", False)
-    st.session_state.setdefault("prof_last_location_guess", "")
-    st.session_state.setdefault("prof_route_type", None)
-    st.session_state.setdefault("prof_top_bucket", "prof_top")
-    st.session_state.setdefault("prof_selected_sug", "")
-    st.session_state.setdefault("prof_top_q", "")  # valor inicial del input
-
-# ---------------------------
-# Acciones (botones)
-# ---------------------------
-def _enter_add_handler(t: dict):
-    """Añadir a la lista usando la sugerencia elegida o el texto crudo (ya guardados en session_state)."""
-    q = (st.session_state.get("prof_top_q", "") or "").strip()
-    sel = (st.session_state.get("prof_selected_sug", "") or "").strip()
-
-    if not q and not sel:
-        st.warning(t.get("type_or_select", "Escribe o selecciona una dirección antes de añadir."))
+def _add_point(value: str | None, t: dict):
+    value = (value or "").strip()
+    if not value:
+        st.warning(t["type_or_select"])
         return
-
-    value = sel or q
     st.session_state.prof_points.append(value)
-    st.success(t.get("added", "Añadido: {x}").format(x=value))
+    st.success(t["added"].format(x=value))
 
-def _use_my_location_handler(t: dict):
-    """
-    1) Obtiene (lat,lng) por IP para fijar un 'location bias' (Google Places Autocomplete).
-    2) Añade un punto aproximado con la ciudad/región/país (opcional).
-    """
-    lat, lng, loc_str = _ip_location_to_latlng()
-    if lat is not None and lng is not None:
-        # Sesgo 30 km para priorizar sugerencias cercanas
-        set_location_bias(lat, lng, radius_m=30000)
-        st.info(t.get("bias_set_ok", "Sesgo de ubicación aplicado para sugerencias cercanas."))
+def _add_point_from_location(t: dict):
+    # 1) intenta fijar el bias con la localización aproximada de IP
+    try:
+        ip = requests.get("https://ipapi.co/json/", timeout=6).json()
+        lat = ip.get("latitude")
+        lng = ip.get("longitude")
+        if lat and lng:
+            # bias de 30km y país ES (ajústalo si quieres)
+            set_location_bias(float(lat), float(lng), 30000, components="country:es")
+    except Exception:
+        pass
+
+    # 2) añade un texto aproximado para empezar
+    guess = _ip_location_to_address()
+    if guess:
+        st.session_state.prof_last_location_guess = guess
+        st.session_state.prof_points.append(guess)
+        st.success(t["loc_added"].format(x=guess))
     else:
-        st.warning(t.get("loc_failed", "No se pudo detectar tu ubicación."))
+        st.warning(t["loc_failed"])
 
-    if loc_str:
-        st.session_state.prof_last_location_guess = loc_str
-        st.session_state.prof_points.append(loc_str)
-        st.success(t.get("loc_added", "Añadido (aprox.): {x}").format(x=loc_str))
+def _init_state():
+    if "prof_points" not in st.session_state:
+        st.session_state.prof_points = []
+    if "prof_last_route_url" not in st.session_state:
+        st.session_state.prof_last_route_url = None
+    if "prof_open_check" not in st.session_state:
+        st.session_state.prof_open_check = False
+    if "prof_last_location_guess" not in st.session_state:
+        st.session_state.prof_last_location_guess = ""
+    if "prof_route_type" not in st.session_state:
+        st.session_state.prof_route_type = None
+    if "prof_last_selected" not in st.session_state:
+        st.session_state.prof_last_selected = ""
 
-def _clear_input_and_suggestions():
-    """Limpia el input y las sugerencias (seguro)."""
-    st.session_state["prof_top_q"] = ""
-    st.session_state["prof_selected_sug"] = ""
-    st.session_state.get("suggest_maps", {}).pop(st.session_state["prof_top_bucket"], None)
-    st.rerun()
+# ---------------- autocompletado vivo ----------------
+# Usaremos streamlit-searchbox, que llama a esta función en cada pulsación.
+# Debe devolver una lista de strings (las etiquetas a mostrar).
+def _live_search_places(query: str) -> list[str]:
+    if not query or len(query.strip()) < 2:
+        return []
+    # Google con types=address + locationbias + components (definido en app_utils)
+    results = provider_google_autocomplete(query.strip(), max_results=8)
+    labels = [label for (label, _meta) in results]
+    # Guardamos las metas en el bucket "prof_top" para que luego resolve_selection funcione
+    bucket = st.session_state.setdefault("suggest_maps", {}).setdefault("prof_top", {})
+    for (label, meta) in results:
+        bucket[label] = meta
+    return labels
 
-# ---------------------------
-# UI: buscador y sugerencias
-# ---------------------------
 def search_and_add_top(t: dict):
-    st.markdown("### " + t.get("workbench", "Ruta de trabajo"))
-
-    # Campo de texto (NO reasignamos session_state aquí)
-    q_ph = t.get("search_label", "Buscar dirección… (pulsa ENTER para añadir)")
-    q = st.text_input(
-        q_ph,
-        key="prof_top_q",
-        placeholder=t.get("search_ph", "Calle, número, ciudad… / Street, number, city…"),
+    # Caja de búsqueda con dropdown estilo Google (en vivo)
+    selected = st_searchbox(
+        search_function=_live_search_places,
+        key="prof_searchbox",
+        default="",
+        placeholder="Calle, número, ciudad… / Street, number, city…",
+        clear_on_submit=False,          # conservamos texto tras seleccionar
     )
 
-    # Sugerencias dinámicas con el texto actual
-    labels = []
-    if (q or "").strip():
-        labels = suggest_addresses(q, st.session_state["prof_top_bucket"])
-
-    if labels:
-        st.caption(t.get("suggestions", "Sugerencias:"))
-        st.radio(
-            t.get("choose_suggestion", "Elige una sugerencia"),
-            labels,
-            index=0,
-            key="prof_selected_sug",
-        )
-    else:
-        st.caption(t.get("no_suggestions", "Sin sugerencias todavía"))
-
-    # Acciones
-    c1, c2, c3 = st.columns([0.26, 0.26, 0.48])
+    c1, c2 = st.columns([0.25, 0.25])
     with c1:
-        if st.button(t.get("add_enter", "Añadir (ENTER)"), type="primary", key="btn_add"):
-            _enter_add_handler(t)
+        if st.button(t["add_enter"], key="btn_add"):
+            # Si el usuario eligió un ítem del dropdown, úsalo; si no, usa el texto actual
+            value = selected or st.session_state.get("prof_searchbox", "")
+            _add_point(value, t)
     with c2:
-        if st.button(t.get("clear_input", "Limpiar"), key="btn_clear"):
-            _clear_input_and_suggestions()
-    with c3:
-        if st.button(t.get("use_my_location", "Usar mi ubicación"), key="btn_loc"):
-            _use_my_location_handler(t)
+        if st.button(t["use_my_location"]):
+            _add_point_from_location(t)
 
-# ---------------------------
-# UI principal
-# ---------------------------
 def mostrar_profesional(t: dict):
     _init_state()
 
-    st.subheader(t.get("prof_header", "Ruta de trabajo"))
-    st.caption(t.get(
-        "prof_caption",
-        "Crea rutas con paradas usando direcciones completas. La última parada puede ser el destino final."
-    ))
+    st.subheader(t["prof_header"])
+    st.caption(t["prof_caption"])
 
-    # Tipos de ruta (opciones traducidas)
-    route_types = t.get("route_types", ["Más rápido", "Más corto", "Evitar autopistas", "Evitar peajes", "Ruta panorámica"])
+    # Tipos de ruta traducidos
+    route_types = t["route_types"]
     default_idx = 0
     if st.session_state.prof_route_type and st.session_state.prof_route_type in route_types:
         default_idx = route_types.index(st.session_state.prof_route_type)
 
     st.session_state.prof_route_type = st.selectbox(
-        t.get("route_type_label", "Tipo de ruta"),
-        route_types,
-        index=default_idx
+        t["route_type_label"], route_types, index=default_idx
     )
 
     st.divider()
-    # Buscador + sugerencias + acciones
+
+    # 🔎 Autocompletado vivo con Google
     search_and_add_top(t)
 
-    # Lista de puntos
-    st.markdown("### " + t.get("list_title", "Puntos de la ruta (orden de viaje)"))
+    st.markdown(f"### {t['list_title']}")
     pts = st.session_state.prof_points
     if not pts:
-        st.info(t.get("add_at_least_two", "Añade al menos dos puntos (origen y destino) para generar la ruta."))
+        st.info(t["add_at_least_two"])
     else:
         for i, p in enumerate(pts):
             prefix = (
-                t.get("origin", "Origen") if i == 0
-                else (t.get("destination", "Destino") if i == len(pts) - 1
-                      else t.get("stop_num", "Parada {i}").format(i=i))
+                t["origin"] if i == 0
+                else (t["destination"] if i == len(pts) - 1
+                      else t["stop_num"].format(i=i))
             )
             c_lbl, c_up, c_down, c_del = st.columns([0.76, 0.08, 0.08, 0.08])
             with c_lbl:
                 st.write(f"**{prefix}:** {p}")
             with c_up:
-                st.button(
-                    t.get("btn_up", "↑"),
-                    key=f"up_{i}_{len(pts)}",
-                    on_click=_move_point,
-                    args=(i, "up"),
-                    disabled=(i == 0),
-                    use_container_width=True
-                )
+                st.button(t["btn_up"], key=f"up_{i}_{len(pts)}", on_click=_move_point, args=(i, "up"),
+                          disabled=(i == 0), use_container_width=True)
             with c_down:
-                st.button(
-                    t.get("btn_down", "↓"),
-                    key=f"down_{i}_{len(pts)}",
-                    on_click=_move_point,
-                    args=(i, "down"),
-                    disabled=(i == len(pts) - 1),
-                    use_container_width=True
-                )
+                st.button(t["btn_down"], key=f"down_{i}_{len(pts)}", on_click=_move_point, args=(i, "down"),
+                          disabled=(i == len(pts)-1), use_container_width=True)
             with c_del:
-                st.button(
-                    t.get("btn_del", "🗑️"),
-                    key=f"del_{i}_{len(pts)}",
-                    on_click=_remove_point,
-                    args=(i, t),
-                    use_container_width=True
-                )
+                st.button(t["btn_del"], key=f"del_{i}_{len(pts)}", on_click=_remove_point, args=(i, t),
+                          use_container_width=True)
 
     st.divider()
 
-    # Comprobación de abierto ahora (si hay datos de Google)
     st.session_state.prof_open_check = st.checkbox(
-        t.get("open_now_check", "Comprobar si los lugares están abiertos ahora (si hay datos de Google)"),
+        t["open_now_check"],
         value=st.session_state.prof_open_check
     )
 
-    # Generar ruta
-    if st.button(t.get("generate_prof", "Generar ruta"), type="primary", key="btn_generar_prof"):
+    if st.button(t["generate_prof"], type="primary", key="btn_generar_prof"):
         if len(pts) < 2:
-            st.error(t.get("need_two_points", "Necesitas al menos origen y destino."))
+            st.error(t["need_two_points"])
             return
 
-        o_raw, d_raw = pts[0], pts[-1]
+        o_raw = pts[0]
+        d_raw = pts[-1]
         wp_raw = pts[1:-1]
 
+        # Resolver selecciones (usa bucket para place_id de Google)
         o = resolve_selection(o_raw, "prof_point_0")
         d = resolve_selection(d_raw, f"prof_point_{len(pts)-1}")
+
         wp_resolved = []
         open_report = []
-
         for i, label in enumerate(wp_raw, start=1):
             det = resolve_selection(label, f"prof_point_{i}")
             wp_resolved.append(det["address"])
             if st.session_state.prof_open_check:
-                open_report.append((t.get("stop_num", "Parada {i}").format(i=i), det.get("address"), det.get("open_now")))
+                open_report.append((t["stop_num"].format(i=i), det.get("address"), det.get("open_now")))
 
         # Preferencias de ruta
         mode = "driving"
@@ -255,31 +211,30 @@ def mostrar_profesional(t: dict):
             optimize=True
         )
         st.session_state.prof_last_route_url = url
-        st.success(t.get("route_generated", "Ruta generada ({pref}).").format(pref=pref))
+        st.success(t["route_generated"].format(pref=pref))
         st.write(url)
-        st.image(make_qr(url), caption=t.get("scan_qr", "Escanea el QR"))
+        st.image(make_qr(url), caption=t["scan_qr"])
 
         if st.session_state.prof_open_check:
-            st.markdown("### " + t.get("open_status_now", "Estado de apertura (ahora)"))
+            st.markdown(f"### {t['open_status_now']}")
             def _flagline(prefix, det):
                 if det.get("open_now") is True:
-                    st.markdown(f"**{prefix}:** {t.get('open','Abierto')} – {det['address']}")
+                    st.markdown(f"**{prefix}:** {t['open']} – {det['address']}")
                 elif det.get("open_now") is False:
-                    st.markdown(f"**{prefix}:** {t.get('closed','Cerrado')} – {det['address']}")
+                    st.markdown(f"**{prefix}:** {t['closed']} – {det['address']}")
                 else:
-                    st.markdown(f"**{prefix}:** {t.get('nodata','Sin datos')} – {det['address']}")
-            _flagline(t.get("origin","Origen"), o)
+                    st.markdown(f"**{prefix}:** {t['nodata']} – {det['address']}")
+            _flagline(t["origin"], o)
             for title, addr, flag in open_report:
                 if flag is True:
-                    st.markdown(f"**{title}:** {t.get('open','Abierto')} – {addr}")
+                    st.markdown(f"**{title}:** {t['open']} – {addr}")
                 elif flag is False:
-                    st.markdown(f"**{title}:** {t.get('closed','Cerrado')} – {addr}")
+                    st.markdown(f"**{title}:** {t['closed']} – {addr}")
                 else:
-                    st.markdown(f"**{title}:** {t.get('nodata','Sin datos')} – {addr}")
-            _flagline(t.get("destination","Destino"), d)
+                    st.markdown(f"**{title}:** {t['nodata']} – {addr}")
+            _flagline(t["destination"], d)
 
-    # Última ruta
     if st.session_state.prof_last_route_url:
-        with st.expander(t.get("last_route", "Última ruta"), expanded=False):
+        with st.expander(t["last_route"], expanded=False):
             st.write(st.session_state.prof_last_route_url)
-            st.image(make_qr(st.session_state.prof_last_route_url), caption=t.get("scan_qr", "Escanea el QR"))
+            st.image(make_qr(st.session_state.prof_last_route_url), caption=t["scan_qr"])
