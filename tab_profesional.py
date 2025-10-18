@@ -27,6 +27,8 @@ if "prof_last_route_url" not in st.session_state:
 # -------------------------------
 # Componente de búsqueda y lógica de ubicación
 # -------------------------------
+# --- EN /workspaces/Apprutas/tab_profesional.py (función _search_box) ---
+
 def _search_box():
     st.markdown("---")
     
@@ -44,41 +46,13 @@ def _search_box():
         key="prof_q_searchbox",
         # 'default_value' del widget:
         default_value=st.session_state.get("prof_q", ""),
-        # argumentos pasados a suggest_addresses
-        func_kwargs=func_kwargs,
+        # argumentos pasados a suggest_addresses <--- ¡ESTO ES CRUCIAL!
+        func_kwargs=func_kwargs, 
         label="Ruta de trabajo",
         label_visibility="collapsed"
     )
-
-    st.session_state["prof_q"] = selected_value
-
-    # Botones de acción
-    col_add, col_clear, col_loc = st.columns([1.5, 1, 3])
-
-    with col_add:
-        st.button("Añadir (ENTER)", on_click=_add_point_from_ui, type="primary")
-
-    with col_clear:
-        st.button("Limpiar", on_click=_clear_points)
-
-    # --- LÓGICA DE ACTIVACIÓN DE UBICACIÓN (MODIFICACIÓN) ---
-    with col_loc:
-        # Checkbox que activa/desactiva el sesgo
-        is_loc_active = st.checkbox("Usar mi ubicación", key="prof_use_loc", value=st.session_state.get("_loc_bias") is not None)
-        
-        if is_loc_active:
-             # Si se activa el checkbox y NO HAY sesgo, lo creamos.
-             if st.session_state.get("_loc_bias") is None:
-                 _use_ip_bias() # Establece el sesgo en st.session_state["_loc_bias"]
-                 st.rerun() # Recarga para que suggest_addresses lea el nuevo sesgo
-        else:
-             # Si se desactiva el checkbox y SÍ HAY sesgo, lo eliminamos.
-             if st.session_state.get("_loc_bias") is not None:
-                 del st.session_state["_loc_bias"]
-                 st.rerun() # Recarga para que suggest_addresses deje de usar el sesgo
-                 
-    st.markdown("---")
-
+    # ... (el resto de la función sigue) ...
+    
 # -------------------------------
 # Añadir punto y limpiar UI
 # -------------------------------
