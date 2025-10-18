@@ -1,8 +1,8 @@
 # photo_agent_app.py
-import os
 import streamlit as st
 from i18n import get_texts
-# imports diferidos para capturar errores dentro de las pestañas
+
+# --- Import diferido para aislar errores de pestañas ---
 def _safe_import(modname, funcname):
     try:
         mod = __import__(modname, fromlist=[funcname])
@@ -19,17 +19,20 @@ mostrar_turistico   = _safe_import("tab_turistico", "mostrar_turistico")
 st.set_page_config(page_title="Planificador de Rutas", page_icon="🗺️", layout="wide")
 st.set_option("client.showErrorDetails", True)
 
-# --- Detección de idioma (query param > session > default es)
+# --- Detección de idioma (query param > session > default es) ---
 def _get_query_lang():
+    # Streamlit >= 1.31: st.query_params
     try:
-        # Streamlit recientes
-        qp = st.query_params
+        qp = st.query_params  # type: ignore[attr-defined]
         if "lang" in qp:
-            return qp.get("lang")
+            val = qp.get("lang")
+            if isinstance(val, (list, tuple)):
+                return val[0]
+            return val
     except Exception:
         pass
+    # Compatibilidad versiones anteriores
     try:
-        # Compatibilidad antigua
         qp = st.experimental_get_query_params()
         if "lang" in qp and qp["lang"]:
             return qp["lang"][0]
@@ -40,22 +43,34 @@ def _get_query_lang():
 if "lang" not in st.session_state:
     st.session_state["lang"] = _get_query_lang() or "es"
 
-# Sidebar selector
+# --- Selector de idioma en la sidebar ---
 langs_ui = {"es": ("es", "Español / Spanish"), "en": ("en", "Inglés / English")}
+current_lang = st.session_state["lang"]
 sel = st.sidebar.selectbox(
-    label=get_texts(st.session_state["lang"])["lang_label"],
+    label=get_texts(current_lang)["lang_label"],
     options=list(langs_ui.keys()),
     format_func=lambda k: langs_ui[k][1],
-    index=0 if st.session_state["lang"] == "es" else 1
+    index=0 if current_lang == "es" else 1
 )
-st.session_state["lang"] = sel
-t = get_texts(sel)
 
-# Encabezado
+# Si el idioma cambia, lo persistimos en URL y rerun para refrescar toda la UI
+if sel != current_lang:
+    st.session_state["lang"] = sel
+    # Persistir ?lang=<sel> en la URL (compatibilidad antigua y nueva)
+    try:
+        st.experimental_set_query_params(lang=sel)
+    except Exception:
+        pass
+    st.rerun()
+
+# Diccionario de textos activo
+t = get_texts(st.session_state["lang"])
+
+# --- Encabezado ---
 st.markdown(f"# 🗺️ {t['app_title']}")
 st.caption(t["app_subtitle"])
 
-# Tabs con textos traducidos
+# --- Tabs con textos traducidos ---
 tab_labels = t["tabs"]
 tabs = st.tabs(tab_labels)
 
