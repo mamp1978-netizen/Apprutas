@@ -68,38 +68,47 @@ def current_geo_params() -> dict:
 # =========================================================
 def provider_google_autocomplete(query: str, max_results: int = 8):
     """
-    Google Autocomplete con sesgo local si hay geo_bias en session_state.
-    - Aplica language=es
-    - Si hay lat/lng -> añade location y radius (sesgo de proximidad).
-    - Si hay country -> añade components=country:XX (no filtra estrictamente, sesga).
+    Autocompletado con Places API (exacto al de Google Maps),
+    usando sessiontoken y sesgo geográfico por IP si está disponible.
     """
     if not GOOGLE_PLACES_API_KEY or not query:
         return []
 
     try:
-        base = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
-        q = f"input={quote_plus(query)}&types=geocode&language=es"
-        gp = current_geo_params()
+        # Intentamos obtener sesgo geográfico si el usuario lo tiene guardado
+        location_bias = ""
+        if "prof_location_bias" in st.session_state and st.session_state.prof_location_bias:
+            # Si hay texto tipo "Girona, Spain" -> codificamos para locationbias
+            bias = quote_plus(st.session_state.prof_location_bias)
+            location_bias = f"&locationbias=ipbias&inputbias={bias}"
 
-        # Sesgo por país (suave)
-        if gp.get("country"):
-            q += f"&components=country:{gp['country']}"
+        # Token de sesión para que Google asocie las pulsaciones de la misma búsqueda
+        import uuid
+        token = uuid.uuid4().hex
 
-        # Sesgo por proximidad (location/radius) si tenemos lat/lon
-        if gp.get("lat") is not None and gp.get("lng") is not None:
-            q += f"&location={gp['lat']},{gp['lng']}&radius={int(gp.get('radius', 30000))}"
-
-        url = f"{base}?{q}&key={GOOGLE_PLACES_API_KEY}"
+        url = (
+            "https://maps.googleapis.com/maps/api/place/autocomplete/json"
+            f"?input={quote_plus(query)}"
+            f"&types=geocode"
+            f"&language=es"
+            f"&key={GOOGLE_PLACES_API_KEY}"
+            f"&sessiontoken={token}"
+            f"{location_bias}"
+        )
 
         r = requests.get(url, timeout=REQUEST_TIMEOUT)
         r.raise_for_status()
         preds = r.json().get("predictions", [])
+
         out = []
         for p in preds[:max_results]:
-            d, pid = p.get("description"), p.get("place_id")
+            d = p.get("description")
+            pid = p.get("place_id")
             if d and pid:
                 out.append((d, {"provider": "google", "place_id": pid, "desc": d}))
+
         return out
+
     except Exception as e:
         print("Google autocomplete error:", e)
         return []
