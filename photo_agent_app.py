@@ -1,6 +1,17 @@
 # photo_agent_app.py
 import streamlit as st
 from i18n import get_texts
+import os
+
+GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
+
+if GOOGLE_PLACES_API_KEY:
+    st.sidebar.caption(
+        "🔑 Google key OK (últimos 6): **" +
+        str(GOOGLE_PLACES_API_KEY)[-6:] + "**"
+    )
+else:
+    st.sidebar.error("❌ Falta GOOGLE_PLACES_API_KEY")
 
 # --- Import diferido para aislar errores de pestañas ---
 def _safe_import(modname, funcname):
