@@ -248,4 +248,19 @@ def resolve_selection(label: str, key_bucket: str):
 # -----------------------------------
 # Google Maps URL + QR
 # -----------------------------------
-def build_gmaps_url(origin: str, destination: str, waypoints=None,
+# CORRECCIÓN: El asterisco (*) para keyword-only arguments NO lleva dos puntos (:)
+def build_gmaps_url(origin: str, destination: str, waypoints=None, *, mode="driving", avoid=None, optimize=True):
+    base = "https://www.google.com/maps/dir/?api=1"
+    parts = [
+        f"origin={quote_plus(origin)}",
+        f"destination={quote_plus(destination)}",
+        f"travelmode={mode}"
+    ]
+    if avoid:
+        parts.append(f"avoid={quote_plus(','.join(avoid))}")
+    if waypoints:
+        wp = "|".join([quote_plus(w) for w in waypoints if w]) # Aseguramos que los waypoints se codifican correctamente
+        if optimize and len(waypoints) > 1:
+            wp = f"optimize:true|{wp}"
+        parts.append(f"waypoints={wp}")
+    return base + "&" + "&".join(parts)
