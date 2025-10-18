@@ -181,14 +181,19 @@ def mostrar_profesional():
     # 2. Barra de búsqueda
     _search_box()
 
-    # 3. Lista de puntos (Origen, Destino, Paradas)
-    pts = st.session_state["prof_points"] 
-    
-    st.subheader("Puntos de la ruta (orden de viaje)")
-    
-    if not pts:
-        st.info("Agregue al menos dos puntos (origen y destino) para generar la ruta.")
-    
+
+# 3. Lista de puntos (Origen, Destino, Paradas)
+pts = st.session_state["prof_points"] 
+
+st.subheader("Puntos de la ruta (orden de viaje)")
+
+if not pts:
+    st.info("Agregue al menos dos puntos (origen y destino) para generar la ruta.")
+
+# USAMOS st.container() PARA AISLAR EL WIDGET PROBLEMÁTICO
+point_list_container = st.container() 
+
+with point_list_container:
     # render lista con funcionalidad de reordenación
     for i, p in enumerate(pts):
         # Usamos columnas para alinear la dirección y los botones de control
@@ -197,6 +202,7 @@ def mostrar_profesional():
         # --- Botones de Movimiento (col1 y col2) ---
         with col1:
             if i > 0: 
+                # Asegúrate que los on_click handlers no generen problemas (pero son esenciales)
                 if st.button("⬆️", key=f"up_{i}", help="Mover arriba", use_container_width=True):
                     pts.insert(i-1, pts.pop(i))
                     st.rerun()
