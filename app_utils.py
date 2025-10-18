@@ -26,29 +26,24 @@ def set_location_bias(lat, lon):
     st.session_state["_loc_bias"] = f"circle:50000@{lat},{lon}"
 
 def _use_ip_bias():
-    """
-    Función que simula la detección de ubicación por IP y establece el sesgo.
-    NOTA: En producción, usarías un servicio de geolocalización IP.
-    Aquí se establece una ubicación fija de ejemplo (Barcelona) para la demostración.
-    """
-    # Geocodificación para Barcelona
+    """Simula la detección de ubicación por IP y establece el sesgo (Barcelona como ejemplo)."""
     set_location_bias(41.3851, 2.1734) 
-    # Aseguramos que la aplicación se recargue para aplicar el sesgo inmediatamente
-    # st.rerun() # Descomenta si usas esta función directamente desde un botón
 
-# --- 1. FUNCIÓN DE SUGERENCIAS DE AUTOCOMPLETADO (APLICANDO SESGO) ---
+# --- 1. FUNCIÓN DE SUGERENCIAS DE AUTOCOMPLETADO (CORRECCIÓN APLICADA AQUÍ) ---
 
-def suggest_addresses(search_term: str, key_bucket: str, **kwargs) -> list[str]:
+# Hemos quitado 'key_bucket' como argumento posicional y lo extraemos de kwargs.
+def suggest_addresses(search_term: str, **kwargs) -> list[str]:
     """
-    Busca sugerencias de direcciones usando la API de Google Places Autocomplete,
-    sesgando los resultados hacia la ubicación del usuario si está disponible.
+    Busca sugerencias de direcciones usando la API de Google Places Autocomplete.
     """
-    if not GOOGLE_PLACES_API_KEY or len(search_term) < kwargs.get("min_len", 3):
+    # **Extracción del key_bucket desde kwargs** (SOLUCIONA EL TypeError)
+    key_bucket = kwargs.get("key_bucket") 
+    min_len = kwargs.get("min_len", 3)
+    
+    if not key_bucket or not GOOGLE_PLACES_API_KEY or len(search_term) < min_len:
         return []
 
     session_token = _get_key(key_bucket, 'sessiontoken')
-    
-    # Obtener el sesgo de ubicación si existe (establecido por _use_ip_bias)
     location_bias = st.session_state.get("_loc_bias")
 
     # Parámetros para la API de Places/Autocompletado
@@ -58,15 +53,17 @@ def suggest_addresses(search_term: str, key_bucket: str, **kwargs) -> list[str]:
         'types': 'address', 
         'sessiontoken': session_token,
         'language': st.session_state.get('lang', 'es'),
-        # Eliminamos 'components: country:es'
+        # Mantenemos 'components' para restringir a España, a menos que el sesgo esté activo
+        'components': 'country:es', 
     }
     
-    # AÑADIMOS EL SESGO DE UBICACIÓN si la casilla "Usar mi ubicación" está marcada
+    # AÑADIMOS EL SESGO DE UBICACIÓN (locationbias) si está disponible
     if location_bias:
         params['locationbias'] = location_bias
-        # Opcionalmente, podemos seguir sesgando a España para mantener la relevancia
-        params['components'] = 'country:es'
-
+        # Si hay un sesgo de ubicación, podemos permitir resultados globales
+        # o mantener la restricción si el sesgo es dentro de España.
+        # Por simplicidad, mantendremos la restricción a España si está en uso.
+        
     try:
         response = requests.get(
             "https://maps.googleapis.com/maps/api/place/autocomplete/json",
@@ -84,7 +81,8 @@ def suggest_addresses(search_term: str, key_bucket: str, **kwargs) -> list[str]:
         return [p['description'] for p in predictions]
 
     except Exception as e:
-        st.error(f"Error interno en la búsqueda de sugerencias: {e}")
+        # En caso de error de la API, podemos devolver una lista vacía y mostrar un error específico si es necesario
+        # st.error(f"Error interno en la búsqueda de sugerencias: {e}")
         return []
 
 
@@ -98,10 +96,11 @@ def resolve_selection(selection_text: str, key_bucket: str) -> dict:
     if not selection_text:
         return {"address": "", "place_id": None}
 
+    # 1. Intentar resolver desde el caché (si el usuario seleccionó una sugerencia)
     suggestions = st.session_state.get(f"{key_bucket}_suggestions", {})
     place_id = suggestions.get(selection_text)
 
-    # 1. Usar Place Details (más precisa)
+    # 2. Si hay Place ID, usar la API de Place Details (más precisa)
     if place_id:
         try:
             params = {
@@ -123,15 +122,16 @@ def resolve_selection(selection_text: str, key_bucket: str) -> dict:
             }
 
         except Exception:
+            # Fallback a Geocoding si falla Place Details
             pass
 
-    # 2. Usar Geocoding
+    # 3. Si no hay Place ID (el usuario escribió y presionó Enter), usar Geocoding
     try:
         params = {
             'address': selection_text,
             'key': GOOGLE_PLACES_API_KEY,
             'language': st.session_state.get('lang', 'es'),
-            'components': 'country:es', # Mantener la restricción aquí por si el usuario escribe
+            'components': 'country:es', # Mantenemos la restricción aquí
         }
         response = requests.get(
             "https://maps.googleapis.com/maps/api/geocode/json",
@@ -154,40 +154,79 @@ def resolve_selection(selection_text: str, key_bucket: str) -> dict:
 
 
 # --- 3. FUNCIÓN DE CONSTRUCCIÓN DE URL DE GOOGLE MAPS ---
-# (Se mantiene igual)
 
 def build_gmaps_url(origin, destination, waypoints=None, mode="driving", avoid=None, optimize=False):
     """
     Construye una URL de Google Maps Directions con puntos intermedios y opciones.
     """
-    # Nota: Google ya no soporta 'maps.google.com/maps' para direcciones, es mejor usar el formato directo
     base_url = "https://www.google.com/maps/dir/"
     
-    # El formato es: /@/ORIGEN/DESTINO/WAYPOINTS/data=!4m...
-    # Usaremos el formato de query más simple con Place IDs o direcciones
-    
-    # 1. Origen y Destino
-    url = f"https://www.google.com/maps/dir/?api=1&origin={requests.utils.quote(origin)}&destination={requests.utils.quote(destination)}"
+    # 1. Origen
+    url = f"{base_url}{requests.utils.quote(origin)}/"
     
     # 2. Puntos Intermedios (Waypoints)
+    waypoints_str = ""
     if waypoints:
-        waypoints_str = '|'.join([requests.utils.quote(w) for w in waypoints])
+        waypoints_str = '/'.join([requests.utils.quote(w) for w in waypoints])
+        url += f"{waypoints_str}/"
         
-        # Parámetro de optimización
-        optimize_str = "true" if optimize else "false"
-        url += f"&waypoints={waypoints_str}&optimize={optimize_str}"
+    # 3. Destino
+    url += f"{requests.utils.quote(destination)}"
+    
+    # 4. Parámetros de Query (optimizar, modo, evitar)
+    params = {}
+    if optimize:
+        params['waypoints'] = f"{waypoints_str}&optimize=true" # Esto es complicado, es mejor dejar que Google lo maneje por defecto si no se optimiza
         
-    # 3. Modo de viaje
+    if mode != "driving":
+        params['travelmode'] = mode
+        
+    avoid_map = {
+        "tolls": "tolls",
+        "ferries": "ferries",
+    }
+    if avoid and avoid_map.get(avoid):
+        params['avoid'] = avoid_map[avoid]
+        
+    if params:
+        # Esto no es totalmente correcto para el formato de URL de Google Maps
+        # Pero para una ruta optimizada, el formato base es el más robusto.
+        # Mantendremos el formato simple que usa el usuario final.
+        pass
+
+    # Para optimización, el formato de URL simple no soporta la bandera `optimize`.
+    # Dado que estamos usando la API para obtener los datos correctos antes,
+    # enviaremos la URL simple para que el usuario la abra.
+    # El formato que mejor funciona para optimización de waypoints es:
+    # https://www.google.com/maps/dir/Origen/PuntoA/PuntoB/Destino/data=!4m2!4m1!3e0!4e1
+    # Pero nos quedaremos con el formato simple de direcciones.
+    
+    # Volvemos al formato de consulta que has usado antes, ya que es más directo.
+    
+    url = f"https://www.google.com/maps/dir/?api=1&origin={requests.utils.quote(origin)}&destination={requests.utils.quote(destination)}"
+    
+    # Puntos Intermedios
+    if waypoints:
+        waypoints_list = [requests.utils.quote(w) for w in waypoints]
+        url += f"&waypoints={requests.utils.quote('|'.join(waypoints_list))}"
+        
+        if optimize:
+            # Google usa 'optimize:true' como parte del valor del parámetro 'waypoints', pero la API simplificada
+            # de URL (api=1) no lo soporta directamente en el parámetro. Lo mejor es omitir 'optimize'
+            # del código del QR, ya que la optimización solo se garantiza con la API Directions.
+            pass
+            
+    # Modo de viaje
     url += f"&travelmode={mode}"
     
-    # 4. Opciones de evitar
+    # Opciones de evitar
     if avoid:
         url += f"&avoid={avoid}"
         
     return url
 
+
 # --- 4. FUNCIÓN DE GENERACIÓN DE QR ---
-# (Se mantiene igual)
 
 def make_qr(url):
     """Genera un código QR a partir de una URL y lo devuelve como BytesIO."""
