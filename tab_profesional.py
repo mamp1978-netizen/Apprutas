@@ -48,64 +48,17 @@ def _init_state():
     st.session_state.setdefault("prof_open_check", False)
     st.session_state.setdefault("prof_last_location_guess", "")
     st.session_state.setdefault("prof_route_type", None)
-    st.session_state.setdefault("prof_top_q", "")
     st.session_state.setdefault("prof_top_bucket", "prof_top")
     st.session_state.setdefault("prof_selected_sug", "")
+    st.session_state.setdefault("prof_top_q", "")  # valor inicial del input
 
 # ---------------------------
-# UI: buscador y sugerencias
+# Acciones (botones)
 # ---------------------------
-def search_and_add_top(t: dict):
-    st.markdown("### " + t.get("workbench", "Ruta de trabajo"))
-
-    # Input de búsqueda
-    q_ph = t.get(
-        "search_label",
-        "Buscar dirección… (pulsa ENTER para añadir)"
-    )
-    st.session_state.prof_top_q = st.text_input(
-        q_ph,
-        key="prof_top_q",
-        placeholder=t.get("search_ph", "Calle, número, ciudad… / Street, number, city…"),
-    )
-
-    # Sugerencias (cada pulsación actualiza)
-    labels = []
-    if st.session_state.prof_top_q.strip():
-        labels = suggest_addresses(st.session_state.prof_top_q, st.session_state.prof_top_bucket)
-
-    if labels:
-        st.caption(t.get("suggestions", "Sugerencias:"))
-        # radio para elegir una sugerencia
-        st.session_state.prof_selected_sug = st.radio(
-            t.get("choose_suggestion", "Elige una sugerencia"),
-            labels,
-            index=0,
-            key="prof_selected_suggestion_radio",
-        )
-    else:
-        st.caption(t.get("no_suggestions", "Sin sugerencias todavía"))
-
-    # Acciones: Añadir / Limpiar / Usar mi ubicación
-    c1, c2, c3 = st.columns([0.26, 0.26, 0.48])
-    with c1:
-        if st.button(t.get("add_enter", "Añadir (ENTER)"), type="primary", key="btn_add"):
-            _enter_add_handler(t)
-    with c2:
-        if st.button(t.get("clear_input", "Limpiar"), key="btn_clear"):
-            # limpia input, selección y sugerencias del bucket
-            st.session_state.prof_top_q = ""
-            st.session_state.prof_selected_sug = ""
-            st.session_state.get("suggest_maps", {}).pop(st.session_state.prof_top_bucket, None)
-            st.rerun()
-    with c3:
-        if st.button(t.get("use_my_location", "Usar mi ubicación"), key="btn_loc"):
-            _use_my_location_handler(t)
-
 def _enter_add_handler(t: dict):
-    """Añadir a la lista usando la sugerencia elegida o el texto crudo."""
-    q = (st.session_state.prof_top_q or "").strip()
-    sel = (st.session_state.prof_selected_sug or "").strip()
+    """Añadir a la lista usando la sugerencia elegida o el texto crudo (ya guardados en session_state)."""
+    q = (st.session_state.get("prof_top_q", "") or "").strip()
+    sel = (st.session_state.get("prof_selected_sug", "") or "").strip()
 
     if not q and not sel:
         st.warning(t.get("type_or_select", "Escribe o selecciona una dirección antes de añadir."))
@@ -118,11 +71,11 @@ def _enter_add_handler(t: dict):
 def _use_my_location_handler(t: dict):
     """
     1) Obtiene (lat,lng) por IP para fijar un 'location bias' (Google Places Autocomplete).
-    2) Añade un punto aproximado con la ciudad/región/país.
+    2) Añade un punto aproximado con la ciudad/región/país (opcional).
     """
     lat, lng, loc_str = _ip_location_to_latlng()
     if lat is not None and lng is not None:
-        # Fijamos sesgo de 30km para mejorar sugerencias cercanas
+        # Sesgo 30 km para priorizar sugerencias cercanas
         set_location_bias(lat, lng, radius_m=30000)
         st.info(t.get("bias_set_ok", "Sesgo de ubicación aplicado para sugerencias cercanas."))
     else:
@@ -132,6 +85,55 @@ def _use_my_location_handler(t: dict):
         st.session_state.prof_last_location_guess = loc_str
         st.session_state.prof_points.append(loc_str)
         st.success(t.get("loc_added", "Añadido (aprox.): {x}").format(x=loc_str))
+
+def _clear_input_and_suggestions():
+    """Limpia el input y las sugerencias (seguro)."""
+    st.session_state["prof_top_q"] = ""
+    st.session_state["prof_selected_sug"] = ""
+    st.session_state.get("suggest_maps", {}).pop(st.session_state["prof_top_bucket"], None)
+    st.rerun()
+
+# ---------------------------
+# UI: buscador y sugerencias
+# ---------------------------
+def search_and_add_top(t: dict):
+    st.markdown("### " + t.get("workbench", "Ruta de trabajo"))
+
+    # Campo de texto (NO reasignamos session_state aquí)
+    q_ph = t.get("search_label", "Buscar dirección… (pulsa ENTER para añadir)")
+    q = st.text_input(
+        q_ph,
+        key="prof_top_q",
+        placeholder=t.get("search_ph", "Calle, número, ciudad… / Street, number, city…"),
+    )
+
+    # Sugerencias dinámicas con el texto actual
+    labels = []
+    if (q or "").strip():
+        labels = suggest_addresses(q, st.session_state["prof_top_bucket"])
+
+    if labels:
+        st.caption(t.get("suggestions", "Sugerencias:"))
+        st.radio(
+            t.get("choose_suggestion", "Elige una sugerencia"),
+            labels,
+            index=0,
+            key="prof_selected_sug",
+        )
+    else:
+        st.caption(t.get("no_suggestions", "Sin sugerencias todavía"))
+
+    # Acciones
+    c1, c2, c3 = st.columns([0.26, 0.26, 0.48])
+    with c1:
+        if st.button(t.get("add_enter", "Añadir (ENTER)"), type="primary", key="btn_add"):
+            _enter_add_handler(t)
+    with c2:
+        if st.button(t.get("clear_input", "Limpiar"), key="btn_clear"):
+            _clear_input_and_suggestions()
+    with c3:
+        if st.button(t.get("use_my_location", "Usar mi ubicación"), key="btn_loc"):
+            _use_my_location_handler(t)
 
 # ---------------------------
 # UI principal
