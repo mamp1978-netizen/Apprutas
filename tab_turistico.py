@@ -2,11 +2,13 @@
 import requests
 import streamlit as st
 from streamlit_searchbox import st_searchbox 
+# --- EN tab_profesional.py, tab_viajero.py, y tab_turistico.py ---
+
 from app_utils import (
     suggest_addresses,
-    resolve_selection, # <--- ¡Asegúrate de que ESTÉ aquí!
+    resolve_selection, 
     build_gmaps_url,
-    make_qr,
+    make_qr, # <--- ¡Asegúrate de que ESTÉ aquí!
     set_location_bias,
     _get_key,
     _use_ip_bias 
