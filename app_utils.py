@@ -1,3 +1,5 @@
+# Contenido COMPLETO y CORREGIDO de app_utils.py
+
 from urllib.parse import quote_plus
 from io import BytesIO
 import os
@@ -176,12 +178,17 @@ def get_place_coords_from_google(place_id: str):
 # -----------------------------------
 # Autocompletado unificado + resolución
 # -----------------------------------
-def suggest_addresses(query: str, key_bucket: str, min_len: int = 1, *args, **kwargs):
+# FUNCIÓN CORREGIDA para aceptar key_bucket y min_len como keyword arguments.
+def suggest_addresses(query: str, *, key_bucket: str, min_len: int = 1, **kwargs):
     """Obtiene sugerencias de direcciones de múltiples proveedores.
     
-    Acepta *args, **kwargs para ser compatible con streamlit_searchbox.
+    Usa '*' para forzar a que key_bucket y min_len se pasen por nombre (keyword).
+    Esto es compatible con streamlit_searchbox.
     """
     q = (query or "").strip()
+    # Los argumentos adicionales de searchbox se capturan en **kwargs
+    # y se ignoran, lo cual es correcto.
+    
     if len(q) < min_len:
         return []
 
@@ -264,4 +271,4 @@ def make_qr(url: str) -> BytesIO:
     buf = BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)
-    return buf
+    return bufv
