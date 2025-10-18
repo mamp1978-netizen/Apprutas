@@ -264,3 +264,35 @@ def build_gmaps_url(origin: str, destination: str, waypoints=None, *, mode="driv
             wp = f"optimize:true|{wp}"
         parts.append(f"waypoints={wp}")
     return base + "&" + "&".join(parts)
+# --- Al final de app_utils.py ---
+
+# -----------------------------------
+# Google Maps URL + QR
+# -----------------------------------
+def build_gmaps_url(origin: str, destination: str, waypoints=None, *, mode="driving", avoid=None, optimize=True):
+    # ... (código que ya corregiste) ...
+    base = "https://www.google.com/maps/dir/?api=1"
+    parts = [
+        f"origin={quote_plus(origin)}",
+        f"destination={quote_plus(destination)}",
+        f"travelmode={mode}"
+    ]
+    if avoid:
+        parts.append(f"avoid={quote_plus(','.join(avoid))}")
+    if waypoints:
+        wp = "|".join([quote_plus(w) for w in waypoints if w])
+        if optimize and len(waypoints) > 1:
+            wp = f"optimize:true|{wp}"
+        parts.append(f"waypoints={wp}")
+    return base + "&" + "&".join(parts)
+
+# ¡ESTA FUNCIÓN DEBE EXISTIR!
+def make_qr(url: str) -> BytesIO:
+    qr = qrcode.QRCode(border=1, box_size=6)
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf
