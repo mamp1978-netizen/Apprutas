@@ -1,12 +1,14 @@
+# --- EN photo_agent_app.py ---
+
 import streamlit as st
 import warnings
 
 # Importa las funciones de cada pestaña.
-# Nota: La aplicación fallará si no existen tab_viajero.py y tab_turistico.py
-from tab_profesional import mostrar_profesional
-# Importa las funciones (comenta si no existen aún)
+from tab_profesional import mostrar_profesional # <- ESTA ES LA LÍNEA 5
 # from tab_viajero import mostrar_viajero
 # from tab_turistico import mostrar_turistico
+
+# ... (resto del código) ...
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
