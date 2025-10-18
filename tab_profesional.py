@@ -12,7 +12,6 @@ from io import BytesIO
 # -------------------------------
 # INICIALIZACIÓN DEL ESTADO DE SESIÓN (CRUCIAL)
 # -------------------------------
-# Aseguramos que todas las claves existan al inicio
 if "prof_points" not in st.session_state:
     st.session_state["prof_points"] = []
     
@@ -43,11 +42,8 @@ if "prof_avoid" not in st.session_state:
 # -------------------------------
 
 def _force_rerun_with_clear():
-    """Limpia la caché y fuerza el re-renderizado para solucionar errores de frontend (removeChild)."""
-    try:
-        st.experimental_memo.clear() 
-    except:
-        pass
+    """Limpia la caché y fuerza el re-renderizado para solucionar errores de frontend."""
+    # st.experimental_memo.clear() ya no se usa, simplemente forzamos el re-run
     st.rerun()
 
 
@@ -75,6 +71,9 @@ def _add_point_from_ui():
     st.session_state["prof_top_suggestions"] = []
     st.session_state["prof_selection"] = ""
     
+    # Forzar re-run para que se actualice la lista de puntos
+    _force_rerun_with_clear()
+    
 
 def _clear_points():
     """Limpia la lista de puntos y el estado de la ruta."""
@@ -89,23 +88,24 @@ def _clear_points():
     _force_rerun_with_clear() 
 
 def _run_search():
-    """Ejecuta la búsqueda de sugerencias manualmente."""
+    """Ejecuta la búsqueda de sugerencias (se llama on_change en el input)."""
     term = st.session_state.get("prof_text_input", "").strip()
     
-    if len(term) < 3:
-        st.warning("Escribe al menos 3 caracteres para que la búsqueda sea efectiva.")
-        st.session_state["prof_top_suggestions"] = []
-        return
+    # Si la longitud es suficiente, buscamos
+    if len(term) >= 3:
+        suggestions = suggest_addresses(term, key_bucket="prof_top", min_len=3) 
+        st.session_state["prof_top_suggestions"] = suggestions
         
-    suggestions = suggest_addresses(term, key_bucket="prof_top", min_len=3) 
-    
-    st.session_state["prof_top_suggestions"] = suggestions
-    
-    if not suggestions:
-        st.warning(f"No se encontraron sugerencias para '{term}'.")
-        st.session_state["prof_selection"] = ""
+        if not suggestions:
+            st.warning(f"No se encontraron sugerencias para '{term}'.")
+            st.session_state["prof_selection"] = ""
+        else:
+            st.session_state["prof_selection"] = suggestions[0]
     else:
-        st.session_state["prof_selection"] = suggestions[0]
+        st.session_state["prof_top_suggestions"] = []
+        st.session_state["prof_selection"] = ""
+
+
 # -------------------------------
 # Componente de búsqueda y lógica de ubicación
 # -------------------------------
@@ -113,7 +113,7 @@ def _run_search():
 def _search_box():
     st.markdown("---")
     
-    # 1. ENTRADA DE TEXTO
+    # 1. ENTRADA DE TEXTO (on_change llama a _run_search)
     st.text_input(
         "Buscar dirección...",
         key="prof_text_input",
@@ -133,8 +133,7 @@ def _search_box():
             label_visibility="visible"
         )
     
-    # 3. Botones de acción y ubicación
-    # Aseguramos claves únicas para cada botón
+    # 3. Botones de acción y ubicación (claves únicas para evitar DuplicateElement)
     col_add, col_clear, col_loc = st.columns([1.5, 1, 3])
 
     with col_add:
@@ -142,17 +141,17 @@ def _search_box():
             "Añadir", 
             on_click=_add_point_from_ui, 
             type="primary",
-            key="prof_add_btn" # <--- CLAVE ÚNICA APLICADA
+            key="prof_add_btn" # CLAVE ÚNICA
         )
 
     with col_clear:
-        st.button("Limpiar", on_click=_clear_points, key="prof_clear_btn") # <--- CLAVE ÚNICA
+        st.button("Limpiar", on_click=_clear_points, key="prof_clear_btn") # CLAVE ÚNICA
 
     # Lógica de ubicación
     with col_loc:
         is_loc_active = st.checkbox(
             "Usar mi ubicación", 
-            key="prof_use_loc_cb", # <--- CLAVE ÚNICA
+            key="prof_use_loc_cb", # CLAVE ÚNICA
             value=st.session_state.get("_loc_bias") is not None,
             help="Si está activado, la búsqueda se sesga a tu ubicación IP."
         )
@@ -164,13 +163,12 @@ def _search_box():
                  _force_rerun_with_clear()
         else:
              if st.session_state.get("_loc_bias") is not None:
-                 # Esta línea puede ser el problema de duplicidad. 
-                 # Si se cambia el checkbox, Streamlit puede re-ejecutarlo rápidamente.
-                 # Eliminamos la variable de sesión y forzamos el re-run para que se borre el widget.
                  del st.session_state["_loc_bias"]
                  _force_rerun_with_clear()
                  
     st.markdown("---")
+
+
 # -------------------------------
 # Función principal de la pestaña
 # -------------------------------
@@ -196,39 +194,46 @@ def mostrar_profesional():
     if not pts:
         st.info("Agregue al menos dos puntos (origen y destino) para generar la ruta.")
     
-    # Contenedor para la estabilidad del frontend
     point_list_container = st.container() 
 
     with point_list_container:
         # render lista con funcionalidad de reordenación
-# --- EN tab_profesional.py (Parte del Bucle de Puntos) ---
+        for i, p in enumerate(pts):
+            col1, col2, col3, col4, col5 = st.columns([0.08, 0.08, 0.08, 0.68, 0.08])
+            
+            # --- Botones de Movimiento ---
+            with col1:
+                if i > 0: 
+                    # Key única f"up_{i}"
+                    if st.button("⬆️", key=f"up_{i}", help="Mover arriba", use_container_width=True):
+                        pts.insert(i-1, pts.pop(i))
+                        _force_rerun_with_clear() 
+            with col2:
+                if i < len(pts) - 1: 
+                    # Key única f"down_{i}"
+                    if st.button("⬇️", key=f"down_{i}", help="Mover abajo", use_container_width=True):
+                        pts.insert(i+1, pts.pop(i))
+                        _force_rerun_with_clear()
 
-# ...
-for i, p in enumerate(pts):
-    col1, col2, col3, col4, col5 = st.columns([0.08, 0.08, 0.08, 0.68, 0.08])
-    
-    # --- Botones de Movimiento (con keys unicas) ---
-    with col1:
-        if i > 0: 
-            if st.button("⬆️", key=f"up_{i}", help="Mover arriba", use_container_width=True): # <--- KEY ÚNICA
-                # ...
-    with col2:
-        if i < len(pts) - 1: 
-            if st.button("⬇️", key=f"down_{i}", help="Mover abajo", use_container_width=True): # <--- KEY ÚNICA
-                # ...
-    # --- Botón Eliminar (con key unica) ---
-    with col5:
-        if st.button("🗑️", key=f"del_{i}", help="Eliminar punto", use_container_width=True): # <--- KEY ÚNICA
-            # ...
-# ...
+            # --- Etiqueta ---
+            with col4:
+                prefix = "Origen" if i == 0 else ("Destino" if i == len(pts) - 1 else f"Parada #{i}:")
+                st.markdown(f"**{prefix}**: {p}")
+            
+            # --- Botón Eliminar ---
+            with col5:
+                # Key única f"del_{i}"
+                if st.button("🗑️", key=f"del_{i}", help="Eliminar punto", use_container_width=True):
+                    pts.pop(i)
+                    _force_rerun_with_clear()
                 
     # 4. Botón Generar Ruta
     st.markdown("---")
     
-    if st.button("Generar ruta profesional", type="primary"):
+    if st.button("Generar ruta profesional", type="primary", key="prof_generate_btn"):
         if len(pts) < 2:
             st.warning("Deben haber dos o más puntos (origen y destino).")
-            return 
+            return # <--- Asegúrate de que este 'return' tenga la indentación correcta (2 niveles)
         
         # --- 4.1 Resolución de Puntos ---
         origen_label = pts[0]
