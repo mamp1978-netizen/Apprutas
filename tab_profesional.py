@@ -83,12 +83,14 @@ def _init_state():
         st.session_state.prof_last_location_guess = ""
     if "prof_route_type" not in st.session_state:
         st.session_state.prof_route_type = None  # se setea al crear el select
+    if "prof_choice" not in st.session_state:
+        st.session_state.prof_choice = None  # sugerencia elegida en el radio
 
 
 # ---------------- UI ----------------
 
 def search_and_add_top(t: dict):
-    # Form con botones dentro (evita el error "Missing Submit Button")
+    # Form con botones dentro (evita el error “Missing Submit Button”)
     with st.form(key="prof_top_form", clear_on_submit=True):
         q = st.text_input(
             t.get("search_label", "Buscar dirección… (pulsa ENTER para añadir)"),
@@ -96,30 +98,30 @@ def search_and_add_top(t: dict):
             placeholder="Calle, número, ciudad… / Street, number, city…"
         )
 
-        # Sugerencias
-        suggestions = suggest_addresses(q, "prof_top") if q else []
+        # Sugerencias (sin selección por defecto)
         picked = None
+        suggestions = suggest_addresses(q, "prof_top") if q else []
         if suggestions:
             st.caption(t.get("suggestions", "Sugerencias:"))
-            st.write("• " + "\n• ".join(suggestions[:6]))
-            picked = st.selectbox(
-                t.get("select_suggestion", "Elige una sugerencia (o pulsa ENTER)"),
-                suggestions,
-                index=0,
-                key=f"prof_top_pick_{len(suggestions)}"
+            # Mostrar estilo “lista”, como Google: radio sin selección por defecto
+            picked = st.radio(
+                t.get("select_suggestion", "Elige una sugerencia"),
+                options=suggestions,
+                index=None,                # <-- no hay selección por defecto
+                key="prof_choice",
             )
         else:
             st.caption(t.get("no_suggestions", "Sin sugerencias todavía"))
 
-        # Botones dentro del formulario
         c1, c2 = st.columns([0.7, 0.3])
         with c1:
             submitted = st.form_submit_button(t.get("add_enter", "Añadir (ENTER)"))
         with c2:
             loc = st.form_submit_button(t.get("use_my_location", "📍 Usar mi ubicación"))
 
-    # Acciones (fuera del 'with', pero los botones se declaran dentro del form)
+    # Acciones
     if submitted:
+        # Si hay sugerencia elegida, añadimos esa; si no, añadimos lo tecleado
         if picked:
             _add_point(picked, t)
         else:
