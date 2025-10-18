@@ -85,38 +85,45 @@ def _refresh_suggestions(t: dict):
 
 
 def _enter_add_handler(t: dict):
-    """Se ejecuta al pulsar ENTER en el text_input (on_change)."""
-    # Si hay una sugerencia seleccionada, usamos esa. Si no, la primera. Si no, el texto tecleado.
+    """Callback al pulsar ENTER: añade el punto sin modificar directamente el text_input."""
     sel = st.session_state.get("prof_selected_label", "") or ""
     sugs = st.session_state.get("prof_suggestions", []) or []
     q = st.session_state.get("prof_top_q", "").strip()
 
+    if not (sel or sugs or q):
+        st.warning(t["type_or_select"])
+        return
+
     candidate = sel or (sugs[0] if sugs else q)
     _add_point(candidate, t)
 
-    # Limpiar controles para siguiente entrada
-    st.session_state.prof_top_q = ""
-    st.session_state.prof_suggestions = []
-    st.session_state.prof_selected_label = ""
+    # Marcamos que hay que limpiar en el siguiente render
+    st.session_state["prof_needs_clear"] = True
 
 
 def search_and_add_top(t: dict):
-    # Campo de búsqueda *fuera* de st.form para recibir el valor en tiempo real.
+    # Limpiamos solo después del ciclo de render (no dentro del callback)
+    if st.session_state.get("prof_needs_clear", False):
+        st.session_state.prof_top_q = ""
+        st.session_state.prof_suggestions = []
+        st.session_state.prof_selected_label = ""
+        st.session_state.prof_needs_clear = False
+
+    # Input principal
     st.text_input(
         t["search_label"],
         key="prof_top_q",
         placeholder="Calle, número, ciudad… / Street, number, city…",
         on_change=_enter_add_handler,
-        args=(t,),  # para que _enter_add_handler reciba t
+        args=(t,),
     )
 
-    # Refrescar sugerencias en cada render en función de lo que haya tecleado
+    # Refrescar sugerencias en tiempo real
     _refresh_suggestions(t)
 
     sugs = st.session_state.get("prof_suggestions", []) or []
     if sugs:
         st.caption(t.get("suggestions", "Sugerencias:"))
-        # Radio para elegir una sugerencia antes de confirmar
         st.radio(
             label=t.get("select_suggestion", "Elige una sugerencia"),
             options=sugs,
@@ -127,7 +134,6 @@ def search_and_add_top(t: dict):
 
     c1, c2 = st.columns([0.5, 0.5])
     with c1:
-        # Botón explícito para añadir
         if st.button(t["add_enter"]):
             _enter_add_handler(t)
     with c2:
