@@ -1,4 +1,3 @@
-# app_utils.py
 from urllib.parse import quote_plus
 from io import BytesIO
 import os
@@ -23,12 +22,24 @@ GOOGLE_PLACES_API_KEY = _get_key("GOOGLE_PLACES_API_KEY")
 SERPAPI_API_KEY       = _get_key("SERPAPI_API_KEY") or _get_key("SERPAPI_KEY")
 REQUEST_TIMEOUT = 8
 
-# Bias opcional (puedes cambiarlo si quieres priorizar otro país)
+# Sesgo por país (opcional)
 COUNTRY_BIAS = os.getenv("PLACES_COUNTRY", "es").lower().strip()  # "es", "fr", "us", etc.
+
+# ====== Gestión del sesgo de ubicación (lat/lon + radio) ======
+def set_location_bias(lat: float | None, lng: float | None, radius_m: int = 30000):
+    """
+    Guarda en session_state un sesgo de ubicación para el Autocomplete de Google.
+    """
+    if lat is None or lng is None:
+        st.session_state["geo_bias"] = None
+    else:
+        st.session_state["geo_bias"] = {"lat": float(lat), "lng": float(lng), "radius": int(radius_m)}
+
+def _get_location_bias():
+    return st.session_state.get("geo_bias")
 
 # ---- helper seguro para el bucket de sugerencias ----
 def _bucket_for(key_bucket: str) -> dict:
-    """Devuelve el sub-bucket para key_bucket, creando lo necesario en session_state."""
     if "suggest_maps" not in st.session_state:
         st.session_state["suggest_maps"] = {}
     sm = st.session_state["suggest_maps"]
@@ -39,8 +50,11 @@ def _bucket_for(key_bucket: str) -> dict:
 # -------- Proveedores --------
 def provider_google_autocomplete(query: str, max_results: int = 8):
     """
-    Autocomplete con sesgo a direcciones (no solo vías).
-    Si hay COUNTRY_BIAS se añade components=country:XX para afinar.
+    Autocomplete con:
+      - types=address (mejor para portales)
+      - language=es
+      - components=country:XX (si hay)
+      - sesgo de ubicación (location + radius) si está disponible
     """
     if not GOOGLE_PLACES_API_KEY or not query:
         return []
@@ -48,12 +62,18 @@ def provider_google_autocomplete(query: str, max_results: int = 8):
         base = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
         params = [
             f"input={quote_plus(query)}",
-            "types=address",               # <-- clave para portales concretos
+            "types=address",
             "language=es",
             f"key={GOOGLE_PLACES_API_KEY}",
         ]
         if COUNTRY_BIAS:
             params.append(f"components=country:{COUNTRY_BIAS}")
+
+        # Bias geográfico opcional
+        bias = _get_location_bias()
+        if bias:
+            params.append(f"location={bias['lat']},{bias['lng']}")
+            params.append(f"radius={bias['radius']}")
 
         url = f"{base}?{'&'.join(params)}"
         r = requests.get(url, timeout=REQUEST_TIMEOUT)
@@ -149,7 +169,6 @@ def suggest_addresses(query: str, key_bucket: str):
     q = (query or "").strip()
     if len(q) < 2:
         return []
-    # Probamos en cascada
     results = provider_google_autocomplete(q) or provider_serpapi_maps(q) or provider_nominatim(q) or []
     clean = []
     for item in results:
@@ -165,34 +184,26 @@ def suggest_addresses(query: str, key_bucket: str):
     return labels
 
 def resolve_selection(label: str, key_bucket: str):
-    """
-    Devuelve siempre:
-      { address: str, lat: float|None, lng: float|None, open_now: bool|None }
-    Si viene de Google con place_id → pedimos details.
-    Fallback extra: si la dirección final no trae número pero el label del usuario sí, conservamos el label.
-    """
     if not label:
         return {"address": "", "lat": None, "lng": None, "open_now": None}
 
     meta = st.session_state.get("suggest_maps", {}).get(key_bucket, {}).get(label)
+
     if not meta:
-        # Puede venir de otro bucket (ej. se copió desde prof_top)
-        # Buscamos a nivel global como red de seguridad
+        # Buscar en todos los sub-buckets por si se copió desde otro
         sm = st.session_state.get("suggest_maps", {})
-        for bname, bucket in sm.items():
+        for bucket in sm.values():
             m = bucket.get(label)
             if m:
                 meta = m
                 break
 
     if not meta:
-        # Sin meta: nos quedamos con lo tecleado
         return {"address": label, "lat": None, "lng": None, "open_now": None}
 
     if meta.get("provider") == "google" and meta.get("place_id"):
         det = get_place_coords_from_google(meta["place_id"])
         final_addr = det.get("address") or label
-        # Fallback: si Google no trae número pero el label del usuario sí, conservamos el label
         if not _has_number(final_addr) and _has_number(label):
             final_addr = label
         return {
@@ -202,7 +213,6 @@ def resolve_selection(label: str, key_bucket: str):
             "open_now": det.get("open_now"),
         }
 
-    # Otros proveedores: usamos lo que tengamos, con el mismo fallback
     final_addr = meta.get("desc") or label
     if not _has_number(final_addr) and _has_number(label):
         final_addr = label
