@@ -1,6 +1,4 @@
 import streamlit as st
-# Es importante que app_utils.py contenga:
-# suggest_addresses, resolve_selection, build_gmaps_url, make_qr, set_location_bias, _use_ip_bias
 from app_utils import (
     suggest_addresses,
     resolve_selection, 
@@ -45,13 +43,11 @@ if "prof_avoid" not in st.session_state:
 # -------------------------------
 
 def _force_rerun_with_clear():
-    """Limpia la caché y fuerza el re-renderizado para estabilizar el frontend."""
-    # Intentamos forzar la limpieza de cualquier memo/singleton antes de hacer rerun
-    # Esto es CRUCIAL para solucionar el 'removeChild' en navegadores móviles.
+    """Limpia la caché y fuerza el re-renderizado para solucionar errores de frontend (removeChild)."""
+    # Intentamos forzar la limpieza de cualquier memo/singleton
     try:
         st.experimental_memo.clear() 
     except:
-        # Si clear() no existe o falla, simplemente continuamos.
         pass
     st.rerun()
 
@@ -80,7 +76,6 @@ def _add_point_from_ui():
     st.session_state["prof_top_suggestions"] = []
     st.session_state["prof_selection"] = ""
     
-    # No usamos st.rerun() aquí. La adición de un punto al estado ya lo hace automáticamente.
 
 def _clear_points():
     """Limpia la lista de puntos y el estado de la ruta."""
@@ -92,7 +87,7 @@ def _clear_points():
     st.session_state["prof_top_suggestions"] = []
     st.session_state["prof_selection"] = ""
 
-    _force_rerun_with_clear() # Usamos la función de estabilidad
+    _force_rerun_with_clear() 
 
 def _run_search():
     """Ejecuta la búsqueda de sugerencias manualmente."""
@@ -103,8 +98,6 @@ def _run_search():
         st.session_state["prof_top_suggestions"] = []
         return
         
-    # Llama a la función de la API de Google
-    # Nota: Asume que 'suggest_addresses' usa la clave 'prof_top' para guardar metadatos.
     suggestions = suggest_addresses(term, key_bucket="prof_top", min_len=3) 
     
     st.session_state["prof_top_suggestions"] = suggestions
@@ -219,12 +212,12 @@ def mostrar_profesional():
                 if i > 0: 
                     if st.button("⬆️", key=f"up_{i}", help="Mover arriba", use_container_width=True):
                         pts.insert(i-1, pts.pop(i))
-                        _force_rerun_with_clear() # CORRECCIÓN: Usa la función de estabilidad
+                        _force_rerun_with_clear() 
             with col2:
                 if i < len(pts) - 1: 
                     if st.button("⬇️", key=f"down_{i}", help="Mover abajo", use_container_width=True):
                         pts.insert(i+1, pts.pop(i))
-                        _force_rerun_with_clear() # CORRECCIÓN: Usa la función de estabilidad
+                        _force_rerun_with_clear()
 
             # --- Etiqueta ---
             with col4:
@@ -235,7 +228,7 @@ def mostrar_profesional():
             with col5:
                 if st.button("🗑️", key=f"del_{i}", help="Eliminar punto", use_container_width=True):
                     pts.pop(i)
-                    _force_rerun_with_clear() # CORRECCIÓN: Usa la función de estabilidad
+                    _force_rerun_with_clear()
                 
     # 4. Botón Generar Ruta
     st.markdown("---")
@@ -243,7 +236,7 @@ def mostrar_profesional():
     if st.button("Generar ruta profesional", type="primary"):
         if len(pts) < 2:
             st.warning("Deben haber dos o más puntos (origen y destino).")
-            return # Indentación Correcta
+            return 
         
         # --- 4.1 Resolución de Puntos ---
         origen_label = pts[0]
@@ -292,7 +285,6 @@ def mostrar_profesional():
             col_qr, col_info = st.columns([1, 3])
             
             with col_qr:
-                # CORRECCIÓN: Reemplazamos use_column_width por use_container_width
                 st.image(qr_bytes, caption="Escanea para abrir la ruta", use_container_width=True) 
             
             with col_info:
