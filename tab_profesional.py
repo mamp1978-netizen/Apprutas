@@ -1,4 +1,4 @@
-# Contenido COMPLETO y CORREGIDO FINAL de tab_profesional.py
+# Contenido COMPLETO, FINAL y CORREGIDO de tab_profesional.py
 
 import streamlit as st
 from streamlit_searchbox import st_searchbox 
@@ -13,7 +13,10 @@ from app_utils import (
 )
 from io import BytesIO
 
-# --- Estado de Sesión ---
+# -------------------------------
+# INICIALIZACIÓN DEL ESTADO DE SESIÓN (CRUCIAL para evitar KeyErrors)
+# Las variables se inicializan si no existen.
+# -------------------------------
 if "prof_points" not in st.session_state:
     st.session_state["prof_points"] = []
 if "prof_q" not in st.session_state:
@@ -24,27 +27,25 @@ if "prof_last_route_url" not in st.session_state:
 # -------------------------------
 # Componente de búsqueda
 # -------------------------------
-# --- EN /workspaces/Apprutas/tab_profesional.py (función _search_box) ---
 def _search_box():
     st.markdown("---")
     
-    # CRUCIAL: 'key_bucket' y 'min_len' deben pasarse como keyword arguments
-    # para que suggest_addresses los extraiga de **kwargs.
+    # Parámetros para la función suggest_addresses
     func_kwargs={
-        "key_bucket": "prof_top", # <-- ESTO HACE QUE VUELVA A FUNCIONAR
-        "min_len": 1
+        "key_bucket": "prof_top",
+        "min_len": 1 
     }
     
-    # La barra de búsqueda
+    # La barra de búsqueda (st_searchbox)
     selected_value = st_searchbox(
         search_function=suggest_addresses,
         placeholder="Buscar dirección... (presione ENTER para agregar)",
         # 'key' del widget: CRUCIAL para poder resetearlo
         key="prof_q_searchbox",
-        # 'default_value' del widget: Toma el valor de sesión
+        # 'default_value' del widget:
         default_value=st.session_state.get("prof_q", ""),
         # argumentos pasados a suggest_addresses
-        func_kwargs=func_kwargs, # <-- Se pasa el diccionario de argumentos
+        func_kwargs=func_kwargs,
         label="Ruta de trabajo",
         label_visibility="collapsed"
     )
@@ -63,18 +64,16 @@ def _search_box():
 
     with col_loc:
         st.checkbox("Usar mi ubicación", key="prof_use_loc", value=False)
-        # Opcional: Llama a la función de sesgo de ubicación si se activa
         if st.session_state["prof_use_loc"] and not st.session_state.get("_loc_bias"):
-            _use_ip_bias() # Esto es un intento de geolocalización, puede fallar
+            _use_ip_bias()
 
     st.markdown("---")
 
 # -------------------------------
-# Añadir punto según lo visible
+# Añadir punto y limpiar UI
 # -------------------------------
 def _add_point_from_ui():
     """Añade la dirección seleccionada/escrita a la lista y limpia la barra."""
-    # Intentamos resolver el valor de la barra de búsqueda (selected_value)
     value = (st.session_state.get("prof_q") or "").strip()
 
     if not value or value.lower() in ["", "buscar dirección… (presione enter para agregar)"]:
@@ -85,20 +84,17 @@ def _add_point_from_ui():
     st.session_state["prof_points"].append(value)
     st.success(f"Añadido: {value}")
     
-    # LIMPIEZA DE LA BARRA DE BÚSQUEDA
-    # 1. Limpiamos la variable de estado principal.
+    # Limpiar el estado y forzar recarga
     st.session_state["prof_q"] = ""
-    # 2. Limpiamos el valor del widget st_searchbox usando su clave única.
     st.session_state["prof_q_searchbox"] = "" 
-    
-    st.rerun() # Recarga el script para reflejar el punto añadido y la barra limpia
+    st.rerun()
 
 def _clear_points():
     st.session_state["prof_points"] = []
     st.session_state["prof_last_route_url"] = None
 
 # -------------------------------
-# Lógica de la ruta
+# Función principal de la pestaña
 # -------------------------------
 def mostrar_profesional():
     st.header("Ruta de trabajo")
@@ -106,9 +102,9 @@ def mostrar_profesional():
     # 1. Opciones de ruta (Tipo y Evitar)
     col_mode, col_avoid = st.columns([1, 1])
     with col_mode:
+        # Nota: El selectbox ahora se inicializa dentro del contenedor de columnas.
         st.selectbox("Tipo de ruta", ["Más rápido", "Más corto"], key="prof_mode", label_visibility="collapsed")
     with col_avoid:
-        # Aquí puedes añadir un selectbox o multiselect para evitar cosas
         st.selectbox("Evitar", ["Ninguno", "Peajes", "Ferries"], key="prof_avoid", label_visibility="collapsed")
 
 
@@ -116,7 +112,8 @@ def mostrar_profesional():
     _search_box()
 
     # 3. Lista de puntos (Origen, Destino, Paradas)
-    pts = st.session_state["prof_points"]
+    # Se accede al estado de sesión que YA HA SIDO INICIALIZADO arriba
+    pts = st.session_state["prof_points"] 
     
     st.subheader("Puntos de la ruta (orden de viaje)")
     
@@ -130,22 +127,19 @@ def mostrar_profesional():
         
         # --- Botones de Movimiento (col1 y col2) ---
         with col1:
-            # Solo permite mover arriba si no es el Origen (i > 0)
             if i > 0: 
                 if st.button("⬆️", key=f"up_{i}", help="Mover arriba", use_container_width=True):
-                    pts.insert(i-1, pts.pop(i)) # Mueve el elemento actual a la posición anterior
+                    pts.insert(i-1, pts.pop(i))
                     st.rerun()
         with col2:
-            # Solo permite mover abajo si no es el Destino (i < len(pts) - 1)
             if i < len(pts) - 1: 
                 if st.button("⬇️", key=f"down_{i}", help="Mover abajo", use_container_width=True):
-                    pts.insert(i+1, pts.pop(i)) # Mueve el elemento actual a la posición siguiente
+                    pts.insert(i+1, pts.pop(i))
                     st.rerun()
 
         # --- Etiqueta (col4) ---
         with col4:
             prefix = "Origen" if i == 0 else ("Destino" if i == len(pts) - 1 else f"Parada #{i}:")
-            # Usamos markdown para darle un estilo claro a la lista
             st.markdown(f"**{prefix}**: {p}")
         
         # --- Botón Eliminar (col5) ---
@@ -163,14 +157,10 @@ def mostrar_profesional():
             return
         
         # --- 4.1 Resolución de Puntos ---
-        # El primer punto es el Origen, el último es el Destino
         origen_label = pts[0]
         destino_label = pts[-1]
-        
-        # Paradas intermedias (Waypoints)
         waypoints_labels = pts[1:-1]
         
-        # Resolvemos las etiquetas a coordenadas/direcciones completas
         origen_meta = resolve_selection(origen_label, "prof_top")
         destino_meta = resolve_selection(destino_label, "prof_top")
         
@@ -180,10 +170,6 @@ def mostrar_profesional():
         ]
         
         # --- 4.2 Generación de URL ---
-        # El modo 'Más rápido' o 'Más corto' no afecta directamente a la URL de Google Maps,
-        # pero la optimización de los waypoints sí.
-        
-        # Mapeo del 'Evitar'
         avoid_map = {
             "Peajes": "tolls",
             "Ferries": "ferries",
@@ -194,9 +180,9 @@ def mostrar_profesional():
             origin=origen_meta["address"],
             destination=destino_meta["address"],
             waypoints=waypoints_resolved,
-            mode="driving", # Se usa 'driving' por defecto
+            mode="driving", 
             avoid=avoid_map.get(st.session_state["prof_avoid"]),
-            optimize=True # Asumimos que un profesional siempre quiere la ruta optimizada
+            optimize=True 
         )
         
         # --- 4.3 Mostrar Resultados ---
