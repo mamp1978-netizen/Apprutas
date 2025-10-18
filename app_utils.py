@@ -1,4 +1,4 @@
-# Contenido COMPLETO y CORREGIDO de app_utils.py
+# Contenido COMPLETO y CORREGIDO FINAL de app_utils.py
 
 from urllib.parse import quote_plus
 from io import BytesIO
@@ -178,16 +178,21 @@ def get_place_coords_from_google(place_id: str):
 # -----------------------------------
 # Autocompletado unificado + resolución
 # -----------------------------------
-# FUNCIÓN CORREGIDA para aceptar key_bucket y min_len como keyword arguments.
-def suggest_addresses(query: str, *, key_bucket: str, min_len: int = 1, **kwargs):
-    """Obtiene sugerencias de direcciones de múltiples proveedores.
+# FUNCIÓN CORREGIDA FINAL: Acepta el término de búsqueda posicionalmente,
+# y extrae 'key_bucket' y 'min_len' de **kwargs, asumiendo que se pasaron por func_kwargs.
+def suggest_addresses(query: str, **kwargs):
+    """Obtiene sugerencias de direcciones de múltiples proveedores."""
     
-    Usa '*' para forzar a que key_bucket y min_len se pasen por nombre (keyword).
-    Esto es compatible con streamlit_searchbox.
-    """
+    # Extraemos los argumentos necesarios de **kwargs (que contiene func_kwargs y args extra)
+    key_bucket = kwargs.get("key_bucket")
+    min_len = kwargs.get("min_len", 1) # Usamos 1 como valor por defecto si no se pasa
+    
+    if not key_bucket:
+        # Esto debería ser imposible si tab_profesional.py es correcto, 
+        # pero es una comprobación de seguridad.
+        return ["Error interno: Falta key_bucket en la función de búsqueda."]
+
     q = (query or "").strip()
-    # Los argumentos adicionales de searchbox se capturan en **kwargs
-    # y se ignoran, lo cual es correcto.
     
     if len(q) < min_len:
         return []
@@ -271,4 +276,4 @@ def make_qr(url: str) -> BytesIO:
     buf = BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)
-    return bufv
+    return buf
