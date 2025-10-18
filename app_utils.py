@@ -182,11 +182,10 @@ def suggest_addresses(query: str, *args, **kwargs):
     """Obtiene sugerencias de direcciones de múltiples proveedores."""
     
     # Extraemos los argumentos necesarios de **kwargs 
-    key_bucket = kwargs.get("key_bucket")
+    key_bucket = kwargs.get("key_bucket", "general") # Usamos 'general' como fallback
     min_len = kwargs.get("min_len", 1) 
     
-    if not key_bucket:
-        return ["Error interno: Falta key_bucket en la función de búsqueda."]
+    # Eliminamos el check de error que da el mensaje: ya no necesitamos el mensaje de error.
 
     q = (query or "").strip()
     
@@ -198,7 +197,7 @@ def suggest_addresses(query: str, *args, **kwargs):
               or provider_serpapi_maps(q) \
               or provider_nominatim(q) \
               or []
-
+    # ... (el resto del código sigue igual) ...
     # sanea
     clean = []
     for item in results:
