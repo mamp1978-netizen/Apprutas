@@ -201,31 +201,26 @@ def mostrar_profesional():
 
     with point_list_container:
         # render lista con funcionalidad de reordenación
-        for i, p in enumerate(pts):
-            col1, col2, col3, col4, col5 = st.columns([0.08, 0.08, 0.08, 0.68, 0.08])
-            
-            # --- Botones de Movimiento ---
-            with col1:
-                if i > 0: 
-                    if st.button("⬆️", key=f"up_{i}", help="Mover arriba", use_container_width=True):
-                        pts.insert(i-1, pts.pop(i))
-                        _force_rerun_with_clear() 
-            with col2:
-                if i < len(pts) - 1: 
-                    if st.button("⬇️", key=f"down_{i}", help="Mover abajo", use_container_width=True):
-                        pts.insert(i+1, pts.pop(i))
-                        _force_rerun_with_clear()
+# --- EN tab_profesional.py (Parte del Bucle de Puntos) ---
 
-            # --- Etiqueta ---
-            with col4:
-                prefix = "Origen" if i == 0 else ("Destino" if i == len(pts) - 1 else f"Parada #{i}:")
-                st.markdown(f"**{prefix}**: {p}")
-            
-            # --- Botón Eliminar ---
-            with col5:
-                if st.button("🗑️", key=f"del_{i}", help="Eliminar punto", use_container_width=True):
-                    pts.pop(i)
-                    _force_rerun_with_clear()
+# ...
+for i, p in enumerate(pts):
+    col1, col2, col3, col4, col5 = st.columns([0.08, 0.08, 0.08, 0.68, 0.08])
+    
+    # --- Botones de Movimiento (con keys unicas) ---
+    with col1:
+        if i > 0: 
+            if st.button("⬆️", key=f"up_{i}", help="Mover arriba", use_container_width=True): # <--- KEY ÚNICA
+                # ...
+    with col2:
+        if i < len(pts) - 1: 
+            if st.button("⬇️", key=f"down_{i}", help="Mover abajo", use_container_width=True): # <--- KEY ÚNICA
+                # ...
+    # --- Botón Eliminar (con key unica) ---
+    with col5:
+        if st.button("🗑️", key=f"del_{i}", help="Eliminar punto", use_container_width=True): # <--- KEY ÚNICA
+            # ...
+# ...
                 
     # 4. Botón Generar Ruta
     st.markdown("---")
