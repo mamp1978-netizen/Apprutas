@@ -1,32 +1,30 @@
-# tab_profesional.py
 import streamlit as st
 import requests
 from app_utils import (
-    suggest_addresses,
-    resolve_selection,
-    build_gmaps_url,
-    make_qr,
+    suggest_addresses, resolve_selection,
+    build_gmaps_url, make_qr, set_location_bias
 )
 
-# ---------------- Helpers ----------------
-
-def _ip_location_to_address() -> str | None:
-    """Aproxima tu ciudad/país para poner un origen rápido (sin GPS)."""
+# ====== Utilidades ubicación (IP → addr + lat/lon) ======
+def _ip_location_guess():
+    """
+    Devuelve (address_str, lat, lng) usando ipapi.co.
+    address_str es una cadena ligera (Ciudad, Región, País).
+    """
     try:
         ip = requests.get("https://ipapi.co/json/", timeout=6).json()
         city = ip.get("city") or ""
         region = ip.get("region") or ""
         country = ip.get("country_name") or ""
-        s = ", ".join([x for x in (city, region, country) if x])
-        return s or None
+        lat = ip.get("latitude")
+        lng = ip.get("longitude")
+        addr = ", ".join([x for x in (city, region, country) if x])
+        return (addr or None, lat, lng)
     except Exception as e:
         print("ip->address error:", e)
-        return None
+        return (None, None, None)
 
-def _ensure_suggest_struct():
-    if "suggest_maps" not in st.session_state:
-        st.session_state["suggest_maps"] = {}
-
+# ====== Helpers lista ======
 def _remove_point(idx: int, t: dict):
     if 0 <= idx < len(st.session_state.prof_points):
         removed = st.session_state.prof_points.pop(idx)
@@ -39,39 +37,28 @@ def _move_point(idx: int, direction: str):
     elif direction == "down" and idx < len(pts) - 1:
         pts[idx+1], pts[idx] = pts[idx], pts[idx+1]
 
-def _copy_meta_from_top_to_point(label: str, point_idx: int):
-    """Copia la meta del bucket 'prof_top' al bucket del punto recién añadido."""
-    _ensure_suggest_struct()
-    sm = st.session_state["suggest_maps"]
-    top = sm.get("prof_top", {})
-    meta = top.get(label)
-    if not meta:
-        return
-    bname = f"prof_point_{point_idx}"
-    if bname not in sm:
-        sm[bname] = {}
-    sm[bname][label] = meta
-
 def _add_point(value: str | None, t: dict):
     value = (value or "").strip()
     if not value:
         st.warning(t["type_or_select"])
         return
     st.session_state.prof_points.append(value)
-    # Copiamos meta al bucket del punto para que resolve_selection encuentre el place_id
-    _copy_meta_from_top_to_point(value, len(st.session_state.prof_points) - 1)
     st.success(t["added"].format(x=value))
 
-def _add_point_from_location(t: dict):
-    guess = _ip_location_to_address()
-    if guess:
-        st.session_state.prof_last_location_guess = guess
-        st.session_state.prof_points.append(guess)
-        _copy_meta_from_top_to_point(guess, len(st.session_state.prof_points) - 1)
-        st.success(t["loc_added"].format(x=guess))
+def _add_point_from_location(t: dict, also_bias=True):
+    addr, lat, lng = _ip_location_guess()
+    if addr:
+        st.session_state.prof_last_location_guess = addr
+        st.session_state.prof_points.append(addr)
+        st.success(t["loc_added"].format(x=addr))
     else:
         st.warning(t["loc_failed"])
+    if also_bias and lat is not None and lng is not None:
+        # Aplica sesgo para mejorar Autocomplete alrededor de tu posición
+        set_location_bias(lat, lng, 30000)
+        st.info(t.get("bias_set", "Sesgo de ubicación aplicado para mejorar sugerencias."))
 
+# ====== Estado ======
 def _init_state():
     if "prof_points" not in st.session_state:
         st.session_state.prof_points = []
@@ -82,57 +69,64 @@ def _init_state():
     if "prof_last_location_guess" not in st.session_state:
         st.session_state.prof_last_location_guess = ""
     if "prof_route_type" not in st.session_state:
-        st.session_state.prof_route_type = None  # se setea al crear el select
-    if "prof_choice" not in st.session_state:
-        st.session_state.prof_choice = None  # sugerencia elegida en el radio
+        st.session_state.prof_route_type = None
 
-
-# ---------------- UI ----------------
-
+# ====== Buscador con sugerencias seleccionables ======
 def search_and_add_top(t: dict):
-    # Form con botones dentro (evita el error “Missing Submit Button”)
     with st.form(key="prof_top_form", clear_on_submit=True):
         q = st.text_input(
-            t.get("search_label", "Buscar dirección… (pulsa ENTER para añadir)"),
+            t["search_label"],
             key="prof_top_q",
             placeholder="Calle, número, ciudad… / Street, number, city…"
         )
-
-        # Sugerencias (sin selección por defecto)
-        picked = None
         suggestions = suggest_addresses(q, "prof_top") if q else []
+        selected = None
+
         if suggestions:
-            st.caption(t.get("suggestions", "Sugerencias:"))
-            # Mostrar estilo “lista”, como Google: radio sin selección por defecto
-            picked = st.radio(
-                t.get("select_suggestion", "Elige una sugerencia"),
+            st.caption(t["suggestions"])
+            # Radio SIN selección por defecto (para que no se añada solo)
+            selected = st.radio(
+                t["choose_one"],
                 options=suggestions,
-                index=None,                # <-- no hay selección por defecto
-                key="prof_choice",
+                index=None,
+                key="prof_top_choice",
             )
         else:
             st.caption(t.get("no_suggestions", "Sin sugerencias todavía"))
 
-        c1, c2 = st.columns([0.7, 0.3])
+        c1, c2, c3 = st.columns([0.45, 0.3, 0.25])
         with c1:
-            submitted = st.form_submit_button(t.get("add_enter", "Añadir (ENTER)"))
+            submitted = st.form_submit_button(t["add_enter"])
         with c2:
-            loc = st.form_submit_button(t.get("use_my_location", "📍 Usar mi ubicación"))
+            loc = st.form_submit_button(t["use_my_location"])
+        with c3:
+            bias_btn = st.form_submit_button(t.get("apply_bias", "Mejorar sugerencias aquí"))
 
-    # Acciones
-    if submitted:
-        # Si hay sugerencia elegida, añadimos esa; si no, añadimos lo tecleado
-        if picked:
-            _add_point(picked, t)
-        else:
-            _add_point(q, t)
+        # Acciones
+        if submitted:
+            if selected:
+                _add_point(selected, t)
+            elif q.strip():
+                _add_point(q, t)
+            else:
+                st.warning(t["type_or_select"])
 
-    if loc:
-        _add_point_from_location(t)
+        if loc:
+            _add_point_from_location(t, also_bias=True)
 
+        if bias_btn:
+            # Solo aplicar sesgo sin añadir un punto
+            _, lat, lng = _ip_location_guess()
+            if lat is not None and lng is not None:
+                set_location_bias(lat, lng, 30000)
+                st.success(t.get("bias_set", "Sesgo de ubicación aplicado."))
+            else:
+                st.warning(t["loc_failed"])
 
+# ====== Vista principal ======
 def mostrar_profesional(t: dict):
     _init_state()
+
     st.subheader(t["prof_header"])
     st.caption(t["prof_caption"])
 
@@ -189,9 +183,9 @@ def mostrar_profesional(t: dict):
 
         o = resolve_selection(o_raw, "prof_point_0")
         d = resolve_selection(d_raw, f"prof_point_{len(pts)-1}")
-
         wp_resolved = []
         open_report = []
+
         for i, label in enumerate(wp_raw, start=1):
             det = resolve_selection(label, f"prof_point_{i}")
             wp_resolved.append(det["address"])
@@ -219,6 +213,7 @@ def mostrar_profesional(t: dict):
             avoid=avoid,
             optimize=True
         )
+
         st.session_state.prof_last_route_url = url
         st.success(t["route_generated"].format(pref=pref))
         st.write(url)
@@ -233,6 +228,7 @@ def mostrar_profesional(t: dict):
                     st.markdown(f"**{prefix}:** {t['closed']} – {det['address']}")
                 else:
                     st.markdown(f"**{prefix}:** {t['nodata']} – {det['address']}")
+
             _flagline(t["origin"], o)
             for title, addr, flag in open_report:
                 if flag is True:
