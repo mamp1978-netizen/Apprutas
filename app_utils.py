@@ -3,6 +3,7 @@ import googlemaps
 import os
 from qrcode import make as make_qr_code 
 from io import BytesIO
+from urllib.parse import quote 
 
 # Carga la clave API de Google Maps desde los secretos de Streamlit
 # Asegúrate de tener GOOGLE_PLACES_API_KEY en tu archivo .streamlit/secrets.toml
