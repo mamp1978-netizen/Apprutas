@@ -1,79 +1,13 @@
-# tab_profesional.py — buscador con autocompletado en vivo (tipo Google)
-
 import streamlit as st
 import requests
-
 from app_utils import (
-    suggest_addresses,
-    resolve_selection,
-    build_gmaps_url,
-    make_qr,
-    set_location_bias,
+    suggest_addresses, resolve_selection, build_gmaps_url, make_qr,
+    ip_geo_bias
 )
 
-# Intenta usar el componente nativo de autocompletado
-try:
-    from streamlit_searchbox import st_searchbox
-    HAS_SEARCHBOX = True
-except Exception:
-    HAS_SEARCHBOX = False
-
-
-# ====== Utilidades ubicación (IP → addr + lat/lon) ======
-def _ip_location_guess():
-    """Devuelve (address_str, lat, lng) usando ipapi.co."""
-    try:
-        ip = requests.get("https://ipapi.co/json/", timeout=6).json()
-        city = ip.get("city") or ""
-        region = ip.get("region") or ""
-        country = ip.get("country_name") or ""
-        lat = ip.get("latitude")
-        lng = ip.get("longitude")
-        addr = ", ".join([x for x in (city, region, country) if x])
-        return (addr or None, lat, lng)
-    except Exception as e:
-        print("ip->address error:", e)
-        return (None, None, None)
-
-
-# ====== Helpers lista ======
-def _remove_point(idx: int, t: dict):
-    if 0 <= idx < len(st.session_state.prof_points):
-        removed = st.session_state.prof_points.pop(idx)
-        st.info(t["removed"].format(x=removed))
-
-
-def _move_point(idx: int, direction: str):
-    pts = st.session_state.prof_points
-    if direction == "up" and idx > 0:
-        pts[idx - 1], pts[idx] = pts[idx], pts[idx - 1]
-    elif direction == "down" and idx < len(pts) - 1:
-        pts[idx + 1], pts[idx] = pts[idx], pts[idx + 1]
-
-
-def _add_point(value: str | None, t: dict):
-    value = (value or "").strip()
-    if not value:
-        st.warning(t["type_or_select"])
-        return
-    st.session_state.prof_points.append(value)
-    st.success(t["added"].format(x=value))
-
-
-def _add_point_from_location(t: dict, also_bias=True):
-    addr, lat, lng = _ip_location_guess()
-    if addr:
-        st.session_state.prof_last_location_guess = addr
-        st.session_state.prof_points.append(addr)
-        st.success(t["loc_added"].format(x=addr))
-    else:
-        st.warning(t["loc_failed"])
-    if also_bias and lat is not None and lng is not None:
-        set_location_bias(lat, lng, 30000)
-        st.info(t.get("bias_set", "Sesgo de ubicación aplicado para mejorar sugerencias."))
-
-
-# ====== Estado ======
+# =========================
+# Estado inicial / helpers
+# =========================
 def _init_state():
     if "prof_points" not in st.session_state:
         st.session_state.prof_points = []
@@ -86,85 +20,131 @@ def _init_state():
     if "prof_route_type" not in st.session_state:
         st.session_state.prof_route_type = None
 
+    # --- Geolocalización automática al abrir la pestaña ---
+    if "geo_bias" not in st.session_state:
+        guess = ip_geo_bias()
+        if guess:
+            # Radio por defecto 30km; si quieres, ajústalo a 50-80km
+            guess["radius"] = 30000
+            st.session_state["geo_bias"] = guess
 
-# ====== Callback para el autocompletado en vivo ======
-def _live_suggestions(query: str):
+
+def _remove_point(idx: int, t: dict):
+    if 0 <= idx < len(st.session_state.prof_points):
+        removed = st.session_state.prof_points.pop(idx)
+        st.info(t["removed"].format(x=removed))
+
+
+def _move_point(idx: int, direction: str):
+    pts = st.session_state.prof_points
+    if direction == "up" and idx > 0:
+        pts[idx-1], pts[idx] = pts[idx], pts[idx-1]
+    elif direction == "down" and idx < len(pts) - 1:
+        pts[idx+1], pts[idx] = pts[idx], pts[idx+1]
+
+
+def _add_point(value: str | None, t: dict, selected_label: str | None = None, key_bucket: str | None = None):
     """
-    Devuelve una lista de etiquetas (strings) de direcciones
-    mientras el usuario escribe (sin pulsar ENTER).
+    Añade a la lista:
+    - Si el usuario eligió una sugerencia (selected_label), resolver con ese label y el bucket.
+    - Si no, añade el texto literal escrito (para no perder el número).
     """
-    if not query or len(query.strip()) < 2:
-        return []
-    # clave de bucket común para la barra superior
-    return suggest_addresses(query, "prof_top")
+    value = (value or "").strip()
+    if not value:
+        st.warning(t["type_or_select"])
+        return
 
-
-# ====== Buscador ======
-def search_and_add_top(t: dict):
-    st.caption(t["search_label"])
-
-    selected = None
-
-    if HAS_SEARCHBOX:
-        # Autocompletado tipo Google: despliega y filtra en vivo
-        selected = st_searchbox(
-            search_function=_live_suggestions,
-            placeholder="Calle, número, ciudad… / Street, number, city…",
-            key="prof_top_searchbox",
-            default=None,           # no preselecciona nada
-            clear_on_submit=False,  # mantiene lo escrito
-        )
+    if selected_label and key_bucket:
+        det = resolve_selection(selected_label, key_bucket)
+        final_text = det.get("address") or selected_label
     else:
-        # Fallback (si no está el componente) con text_input + radio
+        final_text = value
+
+    st.session_state.prof_points.append(final_text)
+    st.success(t["added"].format(x=final_text))
+
+
+def _add_point_from_location(t: dict):
+    # Reutilizamos ip_geo_bias() para actualizar el bias actual
+    guess = ip_geo_bias()
+    if guess:
+        guess["radius"] = 30000
+        st.session_state["geo_bias"] = guess
+        # Lo convertimos a un texto "ciudad, región, país" aproximado
+        try:
+            ip = requests.get("https://ipapi.co/json/", timeout=6).json()
+            city = ip.get("city") or ""
+            region = ip.get("region") or ""
+            country = ip.get("country_name") or ""
+            s = ", ".join([x for x in (city, region, country) if x])
+        except Exception:
+            s = ""
+        if s:
+            st.session_state.prof_last_location_guess = s
+            st.session_state.prof_points.append(s)
+            st.success(t["loc_added"].format(x=s))
+        else:
+            st.info(t["loc_bias_set"])
+    else:
+        st.warning(t["loc_failed"])
+
+
+# =========================
+# UI de búsqueda superior
+# =========================
+def search_and_add_top(t: dict):
+    with st.form(key="prof_top_form", clear_on_submit=True):
         q = st.text_input(
-            label="",
+            t["search_label"],
             key="prof_top_q",
-            placeholder="Calle, número, ciudad… / Street, number, city…",
+            placeholder="Calle, número, ciudad… / Street, number, city…"
         )
-        suggestions = _live_suggestions(q) if q else []
+
+        suggestions = suggest_addresses(q, "prof_top") if q else []
+        selected_label = None
+
+        # Mensaje de “elige una”
         if suggestions:
-            selected = st.radio(
-                t["choose_one"],
+            st.caption(t["suggestions"])
+            # Radio buttons con las opciones (como el dropdown nativo)
+            selected_label = st.radio(
+                label=t["select_suggestion"],
                 options=suggestions,
-                index=None,
-                key="prof_top_choice",
+                key="prof_select_suggestion",
+                index=0,
+                horizontal=False
             )
         else:
-            st.caption(t.get("no_suggestions", "Sin sugerencias todavía"))
+            st.caption(t["no_suggestions"])
 
-    c1, c2, c3 = st.columns([0.45, 0.3, 0.25])
-    with c1:
-        if st.button(t["add_enter"], key="btn_add_prof"):
-            if selected:
-                _add_point(selected, t)
+        c1, c2 = st.columns([0.7, 0.3])
+        with c1:
+            submitted = st.form_submit_button(t["add_enter"])
+        with c2:
+            loc = st.form_submit_button(t["use_my_location"])
+
+        if submitted:
+            # Si hay selección en radio -> respetar esa selección y usar bucket "prof_top"
+            if selected_label:
+                _add_point(q, t, selected_label=selected_label, key_bucket="prof_top")
             else:
-                # Si no hubo selección, intenta añadir el texto actual del searchbox
-                if HAS_SEARCHBOX:
-                    raw = st.session_state.get("prof_top_searchbox") or ""
-                else:
-                    raw = st.session_state.get("prof_top_q") or ""
-                _add_point(raw, t)
-    with c2:
-        if st.button(t["use_my_location"]):
-            _add_point_from_location(t, also_bias=True)
-    with c3:
-        if st.button(t.get("apply_bias", "Mejorar sugerencias aquí")):
-            _, lat, lng = _ip_location_guess()
-            if lat is not None and lng is not None:
-                set_location_bias(lat, lng, 30000)
-                st.success(t.get("bias_set", "Sesgo de ubicación aplicado."))
-            else:
-                st.warning(t["loc_failed"])
+                # Sin sugerencias o sin seleccionar -> añade literal
+                _add_point(q, t)
+
+        if loc:
+            _add_point_from_location(t)
 
 
-# ====== Vista principal ======
+# =========================
+# Pantalla principal
+# =========================
 def mostrar_profesional(t: dict):
     _init_state()
 
     st.subheader(t["prof_header"])
     st.caption(t["prof_caption"])
 
-    # Tipos de ruta traducidos
+    # Tipos de ruta
     route_types = t["route_types"]
     default_idx = 0
     if st.session_state.prof_route_type and st.session_state.prof_route_type in route_types:
@@ -183,43 +163,27 @@ def mostrar_profesional(t: dict):
     else:
         for i, p in enumerate(pts):
             prefix = (
-                t["origin"]
-                if i == 0
-                else (t["destination"] if i == len(pts) - 1 else t["stop_num"].format(i=i))
+                t["origin"] if i == 0
+                else (t["destination"] if i == len(pts) - 1
+                      else t["stop_num"].format(i=i))
             )
             c_lbl, c_up, c_down, c_del = st.columns([0.76, 0.08, 0.08, 0.08])
             with c_lbl:
                 st.write(f"**{prefix}:** {p}")
             with c_up:
-                st.button(
-                    t["btn_up"],
-                    key=f"up_{i}_{len(pts)}",
-                    on_click=_move_point,
-                    args=(i, "up"),
-                    disabled=(i == 0),
-                    use_container_width=True,
-                )
+                st.button(t["btn_up"], key=f"up_{i}_{len(pts)}", on_click=_move_point, args=(i, "up"),
+                          disabled=(i == 0), use_container_width=True)
             with c_down:
-                st.button(
-                    t["btn_down"],
-                    key=f"down_{i}_{len(pts)}",
-                    on_click=_move_point,
-                    args=(i, "down"),
-                    disabled=(i == len(pts) - 1),
-                    use_container_width=True,
-                )
+                st.button(t["btn_down"], key=f"down_{i}_{len(pts)}", on_click=_move_point, args=(i, "down"),
+                          disabled=(i == len(pts)-1), use_container_width=True)
             with c_del:
-                st.button(
-                    t["btn_del"],
-                    key=f"del_{i}_{len(pts)}",
-                    on_click=_remove_point,
-                    args=(i, t),
-                    use_container_width=True,
-                )
+                st.button(t["btn_del"], key=f"del_{i}_{len(pts)}", on_click=_remove_point, args=(i, t),
+                          use_container_width=True)
 
     st.divider()
     st.session_state.prof_open_check = st.checkbox(
-        t["open_now_check"], value=st.session_state.prof_open_check
+        t["open_now_check"],
+        value=st.session_state.prof_open_check
     )
 
     if st.button(t["generate_prof"], type="primary", key="btn_generar_prof"):
@@ -231,10 +195,12 @@ def mostrar_profesional(t: dict):
         d_raw = pts[-1]
         wp_raw = pts[1:-1]
 
+        # Resolución con buckets por índice
         o = resolve_selection(o_raw, "prof_point_0")
         d = resolve_selection(d_raw, f"prof_point_{len(pts)-1}")
-        wp_resolved, open_report = [], []
 
+        wp_resolved = []
+        open_report = []
         for i, label in enumerate(wp_raw, start=1):
             det = resolve_selection(label, f"prof_point_{i}")
             wp_resolved.append(det["address"])
@@ -260,9 +226,8 @@ def mostrar_profesional(t: dict):
             wp_resolved if wp_resolved else None,
             mode=mode,
             avoid=avoid,
-            optimize=True,
+            optimize=True
         )
-
         st.session_state.prof_last_route_url = url
         st.success(t["route_generated"].format(pref=pref))
         st.write(url)
