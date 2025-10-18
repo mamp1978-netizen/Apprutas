@@ -134,6 +134,7 @@ def _search_box():
         )
     
     # 3. Botones de acción y ubicación
+    # Aseguramos claves únicas para cada botón
     col_add, col_clear, col_loc = st.columns([1.5, 1, 3])
 
     with col_add:
@@ -141,17 +142,17 @@ def _search_box():
             "Añadir", 
             on_click=_add_point_from_ui, 
             type="primary",
-            key="prof_add_btn" # <--- ¡SOLUCIÓN! KEY ÚNICA PARA EL BOTÓN
+            key="prof_add_btn" # <--- CLAVE ÚNICA APLICADA
         )
 
     with col_clear:
-        st.button("Limpiar", on_click=_clear_points)
+        st.button("Limpiar", on_click=_clear_points, key="prof_clear_btn") # <--- CLAVE ÚNICA
 
     # Lógica de ubicación
     with col_loc:
         is_loc_active = st.checkbox(
             "Usar mi ubicación", 
-            key="prof_use_loc", 
+            key="prof_use_loc_cb", # <--- CLAVE ÚNICA
             value=st.session_state.get("_loc_bias") is not None,
             help="Si está activado, la búsqueda se sesga a tu ubicación IP."
         )
@@ -163,42 +164,13 @@ def _search_box():
                  _force_rerun_with_clear()
         else:
              if st.session_state.get("_loc_bias") is not None:
+                 # Esta línea puede ser el problema de duplicidad. 
+                 # Si se cambia el checkbox, Streamlit puede re-ejecutarlo rápidamente.
+                 # Eliminamos la variable de sesión y forzamos el re-run para que se borre el widget.
                  del st.session_state["_loc_bias"]
                  _force_rerun_with_clear()
                  
     st.markdown("---")
-    
-    # 4. Botones de acción y ubicación
-    col_add, col_clear, col_loc = st.columns([1.5, 1, 3])
-
-    with col_add:
-        st.button("Añadir", on_click=_add_point_from_ui, type="primary")
-
-    with col_clear:
-        st.button("Limpiar", on_click=_clear_points)
-
-    # Lógica de ubicación
-    with col_loc:
-        is_loc_active = st.checkbox(
-            "Usar mi ubicación", 
-            key="prof_use_loc", 
-            value=st.session_state.get("_loc_bias") is not None,
-            help="Si está activado, la búsqueda se sesga a tu ubicación IP."
-        )
-        
-        # Lógica para activar/desactivar el sesgo de ubicación
-        if is_loc_active:
-             if st.session_state.get("_loc_bias") is None:
-                 _use_ip_bias()
-                 _force_rerun_with_clear()
-        else:
-             if st.session_state.get("_loc_bias") is not None:
-                 del st.session_state["_loc_bias"]
-                 _force_rerun_with_clear()
-                 
-    st.markdown("---")
-
-
 # -------------------------------
 # Función principal de la pestaña
 # -------------------------------
