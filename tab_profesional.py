@@ -22,13 +22,10 @@ if "prof_q" not in st.session_state:
     st.session_state["prof_q"] = ""
 if "prof_last_route_url" not in st.session_state:
     st.session_state["prof_last_route_url"] = None
-# La clave '_loc_bias' se gestiona aquí y en app_utils.py
 
 # -------------------------------
 # Componente de búsqueda y lógica de ubicación
 # -------------------------------
-# --- EN /workspaces/Apprutas/tab_profesional.py (función _search_box) ---
-
 def _search_box():
     st.markdown("---")
     
@@ -46,13 +43,41 @@ def _search_box():
         key="prof_q_searchbox",
         # 'default_value' del widget:
         default_value=st.session_state.get("prof_q", ""),
-        # argumentos pasados a suggest_addresses <--- ¡ESTO ES CRUCIAL!
+        # argumentos pasados a suggest_addresses <--- ¡Aseguramos que está aquí!
         func_kwargs=func_kwargs, 
         label="Ruta de trabajo",
         label_visibility="collapsed"
     )
-    # ... (el resto de la función sigue) ...
-    
+
+    st.session_state["prof_q"] = selected_value
+
+    # Botones de acción
+    col_add, col_clear, col_loc = st.columns([1.5, 1, 3])
+
+    with col_add:
+        st.button("Añadir (ENTER)", on_click=_add_point_from_ui, type="primary")
+
+    with col_clear:
+        st.button("Limpiar", on_click=_clear_points)
+
+    # LÓGICA DE ACTIVACIÓN DE UBICACIÓN
+    with col_loc:
+        # Checkbox que activa/desactiva el sesgo
+        is_loc_active = st.checkbox("Usar mi ubicación", key="prof_use_loc", value=st.session_state.get("_loc_bias") is not None)
+        
+        if is_loc_active:
+             # Si se activa el checkbox y NO HAY sesgo, lo creamos.
+             if st.session_state.get("_loc_bias") is None:
+                 _use_ip_bias() # Establece el sesgo
+                 st.rerun() 
+        else:
+             # Si se desactiva el checkbox y SÍ HAY sesgo, lo eliminamos.
+             if st.session_state.get("_loc_bias") is not None:
+                 del st.session_state["_loc_bias"]
+                 st.rerun() 
+                 
+    st.markdown("---")
+
 # -------------------------------
 # Añadir punto y limpiar UI
 # -------------------------------
@@ -68,11 +93,11 @@ def _add_point_from_ui():
     st.session_state["prof_points"].append(value)
     st.success(f"Añadido: {value}")
     
-    # Limpiar el estado del widget y del cache de opciones del searchbox (CORRECCIÓN)
+    # Limpiar el estado del widget y del cache de opciones del searchbox 
     st.session_state["prof_q"] = ""
     st.session_state["prof_q_searchbox"] = ""
     
-    # Soluciona: TypeError: list indices must be integers, not str
+    # Reseteo del caché interno del searchbox para evitar TypeError: list indices must be integers, not str
     if 'prof_q_searchboxoptions_ts' in st.session_state:
         del st.session_state['prof_q_searchboxoptions_ts'] 
         
