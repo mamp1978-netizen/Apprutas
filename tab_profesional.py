@@ -1,6 +1,6 @@
-# tab_profesional.py
 import requests
 import streamlit as st
+from streamlit_searchbox import st_searchbox # <--- NUEVA IMPORTACIÓN
 from app_utils import (
     suggest_addresses,
     resolve_selection,
@@ -18,7 +18,7 @@ def _init_state():
     ss.setdefault("prof_points", [])
     ss.setdefault("prof_last_route_url", None)
     ss.setdefault("prof_route_type", "Más rápido")
-    ss.setdefault("prof_sel_idx", None)
+    # Eliminamos prof_sel_idx y prof_q como tal, pero mantenemos prof_q para el valor de la barra
     ss.setdefault("prof_q", "")
 
 # -------------------------------
@@ -39,66 +39,59 @@ def _use_ip_bias() -> bool:
 # Añadir punto según lo visible
 # -------------------------------
 def _add_point_from_ui():
-    labels = st.session_state.get("_prof_last_labels") or []
-    sel    = st.session_state.get("prof_sel_idx")
-    q      = (st.session_state.get("prof_q") or "").strip()
-
-    if labels:
-        value = labels[sel] if (sel is not None and 0 <= sel < len(labels)) else labels[0]
-    else:
-        value = q
+    # El valor seleccionado (o escrito) por el usuario ya está en st.session_state["prof_q"]
+    value = (st.session_state.get("prof_q") or "").strip()
 
     if not value:
         st.warning("Escribe o selecciona una dirección.")
         return
 
+    # Añadimos el valor al listado de puntos
     st.session_state["prof_points"].append(value)
     st.success(f"Añadido: {value}")
+    
+    # Limpiamos la barra de búsqueda después de añadir
+    st.session_state["prof_q"] = ""
+    st.rerun()
 
 # -------------------------------
 # Buscador con comportamiento Google-like
 # -------------------------------
 def _search_box():
-    with st.form(key="prof_form", clear_on_submit=False):
-        q = st.text_input(
-            "Buscar dirección… (presione ENTER para agregar)",
-            key="prof_q",
-            placeholder="Calle, número, ciudad… / Street, number, city…",
-        )
+    # Usamos st_searchbox, que se encarga de la entrada de texto y las sugerencias.
+    # Necesita tu función suggest_addresses para obtener la lista de sugerencias.
+    selected_value = st_searchbox(
+        search_function=suggest_addresses,
+        label="Buscar dirección… (presione ENTER para agregar)",
+        placeholder="Calle, número, ciudad… / Street, number, city…",
+        key="prof_q_searchbox",
+        default_value=st.session_state.get("prof_q", ""),
+        # Parámetros para tu función suggest_addresses
+        func_kwargs={
+            "tag": "prof_top",
+            "min_len": 1
+        }
+    )
+    
+    # El valor seleccionado/escrito se guarda inmediatamente en el estado
+    # para ser usado por el botón "Añadir".
+    st.session_state["prof_q"] = selected_value
 
-        # Sugerencias (desde 1 letra)
-        labels = suggest_addresses(q, "prof_top", min_len=1) if q else []
-        st.session_state["_prof_last_labels"] = labels
+    # --- Botones fuera del componente de búsqueda ---
+    col1, col2, col3 = st.columns([0.28, 0.28, 0.44])
+    with col1:
+        # El botón de Añadir llamará a la lógica de _add_point_from_ui()
+        submitted = st.button("Añadir (ENTER)", type="primary", key="add_btn")
+    with col2:
+        clear = st.button("Limpiar", key="clear_btn")
+    with col3:
+        geobias = st.button("📍 Usar mi ubicación", key="geo_btn")
 
-        if labels:
-            st.caption("Sugerencias:")
-            sel_key = f"prof_sel_{hash(q) % 10_000_000}"
-            idx = st.selectbox(
-                "Elige una sugerencia",
-                options=list(range(len(labels))),
-                format_func=lambda i: labels[i],
-                key=sel_key,
-                index=0,  # auto-selecciona la primera
-            )
-            st.session_state["prof_sel_idx"] = idx
-        else:
-            st.caption("Sin sugerencias todavía")
-            st.session_state["prof_sel_idx"] = None
-
-        col1, col2, col3 = st.columns([0.28, 0.28, 0.44])
-        with col1:
-            submitted = st.form_submit_button("Añadir (ENTER)", type="primary")
-        with col2:
-            clear = st.form_submit_button("Limpiar")
-        with col3:
-            geobias = st.form_submit_button("📍 Usar mi ubicación")
-
-    # fuera del form para no recrear widgets
+    # fuera de la definición de los componentes para manejar la acción
     if submitted:
         _add_point_from_ui()
     if clear:
         st.session_state["prof_q"] = ""
-        st.session_state["prof_sel_idx"] = None
         st.rerun()
     if geobias:
         ok = _use_ip_bias()
@@ -149,6 +142,8 @@ def mostrar_profesional(t: dict):
         if len(pts) < 2:
             st.warning("Debes tener origen y destino.")
             return
+        # Nota: La lógica de resolve_selection en tu archivo app_utils es crucial 
+        # para que funcione el despliegue de ruta después de la selección.
         o = resolve_selection(pts[0], "prof_point_0")
         d = resolve_selection(pts[-1], f"prof_point_{len(pts)-1}")
         wp = [resolve_selection(p, f"prof_point_{i}")["address"] for i, p in enumerate(pts[1:-1], 1)]
