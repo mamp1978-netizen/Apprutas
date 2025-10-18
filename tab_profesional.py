@@ -223,14 +223,18 @@ with point_list_container:
                 pts.pop(i)
                 st.rerun()
                 
-    # 4. Botón Generar Ruta
-    st.markdown("---")
-    
-    if st.button("Generar ruta profesional", type="primary"):
-        if len(pts) < 2:
-            st.warning("Deben haber dos o más puntos (origen y destino).")
-            return
-        
+# En tab_profesional.py, en la función mostrar_profesional()
+
+# ... (código anterior)
+
+# 4. Botón Generar Ruta
+st.markdown("---")
+
+if st.button("Generar ruta profesional", type="primary"): # <--- 0 niveles de indentación
+    if len(pts) < 2: # <--- 1 nivel de indentación (4 espacios)
+        st.warning("Deben haber dos o más puntos (origen y destino).") # <--- 2 niveles (8 espacios)
+        return # <--- ¡AQUÍ ESTÁ EL ERROR! Debe tener 2 niveles (8 espacios)
+            
         # --- 4.1 Resolución de Puntos ---
         origen_label = pts[0]
         destino_label = pts[-1]
