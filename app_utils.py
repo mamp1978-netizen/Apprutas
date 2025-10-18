@@ -37,22 +37,26 @@ def _bucket_for(key: str):
 # ---------- PROVEEDORES ----------
 
 def provider_google_autocomplete(query: str, max_results: int = 8):
-    """Usa Google Places Autocomplete API"""
+    """Usa Google Places Autocomplete API con bias a ES e ipbias."""
     if not GOOGLE_PLACES_API_KEY or not query:
         return [], "no-key-or-empty"
     try:
         url = (
             "https://maps.googleapis.com/maps/api/place/autocomplete/json"
             f"?input={quote_plus(query)}"
-            "&types=address"
-            "&language=es"
+            "&types=address"                 # direcciones (mejor que geocode aquí)
+            "&language=es"                   # idioma de salida
+            "&components=country:ES"         # sesgo a España (puedes quitarlo o hacerlo configurable)
+            "&locationbias=ipbias"           # usa la IP para sesgar resultados
             f"&key={GOOGLE_PLACES_API_KEY}"
         )
         r = requests.get(url, timeout=REQUEST_TIMEOUT)
         r.raise_for_status()
         data = r.json()
-        if data.get("status") != "OK":
-            return [], f"google:{data.get('status')}:{data.get('error_message')}"
+        status = data.get("status")
+        if status != "OK":
+            # devolvemos el estado tal cual para verlo en la barra lateral
+            return [], f"google:{status}:{data.get('error_message')}"
         preds = data.get("predictions", [])
         out = []
         for p in preds[:max_results]:
@@ -62,7 +66,6 @@ def provider_google_autocomplete(query: str, max_results: int = 8):
         return out, ""
     except Exception as e:
         return [], f"google-ex:{e}"
-
 
 def provider_serpapi_maps(query: str, max_results: int = 8):
     """Alternativa: SerpAPI Google Maps"""
