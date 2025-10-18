@@ -1,7 +1,6 @@
 import streamlit as st
 import googlemaps
 import os
-import requests
 from qrcode import make as make_qr_code 
 from io import BytesIO
 
@@ -14,7 +13,6 @@ except KeyError:
     st.error("Error: La clave GOOGLE_PLACES_API_KEY no se encontró en 'secrets.toml'.")
     gmaps = None
 except Exception:
-    # Esto manejará si gmaps no se puede inicializar por otras razones
     gmaps = None
 
 # --- CONSTANTES ---
@@ -131,7 +129,6 @@ def suggest_addresses(term: str, key_bucket: str, min_len: int = 3) -> list:
         label = res.get("description", res.get("place_id"))
         place_id = res.get("place_id")
         
-        # Almacenamos Place ID
         st.session_state[meta_key][label] = {"place_id": place_id}
         suggestions_labels.append(label)
 
@@ -143,22 +140,19 @@ def resolve_selection(selection: str, key_bucket: str) -> dict:
     meta_key = f"{key_bucket}_meta"
     resolved_meta = st.session_state.get(meta_key, {}) 
     
-    # 1. Intentar obtener el Place ID
     temp_meta = resolved_meta.get(selection, {})
     place_id = temp_meta.get("place_id")
 
     if place_id:
-        # 2. Si hay Place ID, verificamos si ya tenemos detalles completos
         if temp_meta.get("lat") and temp_meta.get("lng"):
             return temp_meta
             
-        # 3. Si no, los pedimos a la API
         details = _gmaps_place_details(place_id)
         if details:
             st.session_state[meta_key][selection] = details
             return details
     
-    # 4. Fallback: Usar Geocoding para texto que no vino de la sugerencia
+    # Fallback: Usar Geocoding para texto que no vino de la sugerencia
     if not gmaps:
         return {"address": selection, "lat": None, "lng": None}
         
@@ -189,22 +183,23 @@ def resolve_selection(selection: str, key_bucket: str) -> dict:
 def build_gmaps_url(origin: str, destination: str, waypoints: list = None, mode: str = "driving", avoid: str = None, optimize: bool = True) -> str:
     """Construye una URL de Google Maps para direcciones con múltiples paradas."""
     
-    # Usamos google.com/maps para el formato universal de URL
+    # URL de Directions API (el formato más simple para múltiples paradas)
     base_url = "https://www.google.com/maps/dir/"
     
+    # Lista de todos los puntos
     parts = []
     
-    # Origen (primer elemento)
+    # 1. Origen
     parts.append(origin)
     
-    # Paradas intermedias
+    # 2. Paradas intermedias
     if waypoints:
         parts.extend(waypoints)
         
-    # Destino (último elemento)
+    # 3. Destino
     parts.append(destination)
     
-    # Unimos todas las partes de la dirección
+    # Unimos todas las partes con el separador '/' de la URL de dir/
     path = "/".join(parts)
     
     # Parámetros adicionales (se añaden después del path principal con un ? y &)
@@ -213,14 +208,8 @@ def build_gmaps_url(origin: str, destination: str, waypoints: list = None, mode:
     if mode and mode != "driving":
         params.append(f"travelmode={mode}")
     
-    # Opciones de optimización y evitar (se manejan mejor con un enlace de búsqueda directa)
-    # Para la simple URL de dir/ podemos usar los parámetros para evitar
     if avoid in ["tolls", "ferries", "highways"]:
         params.append(f"avoid={avoid}")
-    
-    # Nota: Google Maps maneja la optimización automáticamente en el app móvil. 
-    # Para forzar la optimización en la URL, se requiere un formato más complejo (API de Rutas)
-    # que no es compatible con el formato simple dir/.
     
     query_string = f"?{'&'.join(params)}" if params else ""
     
