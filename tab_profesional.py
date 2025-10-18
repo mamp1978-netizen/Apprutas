@@ -156,4 +156,156 @@ def search_and_add_top(t: dict):
             _add_point_from_location(t)
 
 
-# ----------------
+# ------------------------------
+# Pantalla principal
+# ------------------------------
+
+def mostrar_profesional(t: dict):
+    _init_state()
+
+    st.subheader(t.get("prof_header", "Ruta de trabajo"))
+    st.caption(
+        t.get(
+            "prof_caption",
+            "Añade puntos con la barra de arriba. El primero es origen, el último es destino; "
+            "los demás son paradas intermedias. Puedes reordenar con las flechas y eliminar cualquier punto.",
+        )
+    )
+
+    # Tipos de ruta
+    route_types = t.get("route_types", ["Más rápido", "Más corto", "Evitar autopistas", "Evitar peajes", "Ruta panorámica"])
+    default_idx = 0
+    if st.session_state.prof_route_type in route_types:
+        default_idx = route_types.index(st.session_state.prof_route_type)
+    st.session_state.prof_route_type = st.selectbox(
+        t.get("route_type_label", "Tipo de ruta"),
+        route_types,
+        index=default_idx,
+    )
+
+    st.divider()
+
+    # Buscador en vivo + sugerencias
+    search_and_add_top(t)
+
+    # Lista de puntos
+    st.markdown(f"### {t.get('list_title', 'Puntos de la ruta (orden de viaje)')}")
+    pts = st.session_state.prof_points
+    if not pts:
+        st.info(t.get("add_at_least_two", "Añade al menos dos puntos (origen y destino) para generar la ruta."))
+    else:
+        for i, p in enumerate(pts):
+            prefix = (
+                t.get("origin", "Origen")
+                if i == 0
+                else (t.get("destination", "Destino") if i == len(pts) - 1 else t.get("stop_num", "Parada {i}").format(i=i))
+            )
+            c_lbl, c_up, c_down, c_del = st.columns([0.76, 0.08, 0.08, 0.08])
+            with c_lbl:
+                st.write(f"**{prefix}:** {p}")
+            with c_up:
+                st.button(
+                    t.get("btn_up", "↑"),
+                    key=f"up_{i}_{len(pts)}",
+                    on_click=_move_point,
+                    args=(i, "up"),
+                    disabled=(i == 0),
+                    use_container_width=True,
+                )
+            with c_down:
+                st.button(
+                    t.get("btn_down", "↓"),
+                    key=f"down_{i}_{len(pts)}",
+                    on_click=_move_point,
+                    args=(i, "down"),
+                    disabled=(i == len(pts) - 1),
+                    use_container_width=True,
+                )
+            with c_del:
+                st.button(
+                    t.get("btn_del", "🗑️"),
+                    key=f"del_{i}_{len(pts)}",
+                    on_click=_remove_point,
+                    args=(i, t),
+                    use_container_width=True,
+                )
+
+    st.divider()
+
+    # Checkbox aperturas
+    st.session_state.prof_open_check = st.checkbox(
+        t.get("open_now_check", "Comprobar si los lugares están abiertos ahora (si hay datos de Google)"),
+        value=st.session_state.prof_open_check,
+    )
+
+    # Botón generar
+    if st.button(t.get("generate_prof", "Generar ruta profesional"), type="primary", key="btn_generar_prof"):
+        if len(pts) < 2:
+            st.error(t.get("need_two_points", "Añade al menos origen y destino."))
+            return
+
+        o_raw = pts[0]
+        d_raw = pts[-1]
+        wp_raw = pts[1:-1]
+
+        o = resolve_selection(o_raw, "prof_point_0")
+        d = resolve_selection(d_raw, f"prof_point_{len(pts) - 1}")
+        wp_resolved = []
+        open_report = []
+
+        for i, label in enumerate(wp_raw, start=1):
+            det = resolve_selection(label, f"prof_point_{i}")
+            wp_resolved.append(det["address"])
+            if st.session_state.prof_open_check:
+                open_report.append((t.get("stop_num", "Parada {i}").format(i=i), det.get("address"), det.get("open_now")))
+
+        # Preferencias
+        mode = "driving"
+        avoid = []
+        pref = st.session_state.prof_route_type
+        if pref in ("Más corto", "Shortest"):
+            avoid = ["tolls", "highways"]
+        elif pref in ("Evitar autopistas", "Avoid highways"):
+            avoid = ["highways"]
+        elif pref in ("Evitar peajes", "Avoid tolls"):
+            avoid = ["tolls"]
+        elif pref in ("Ruta panorámica", "Scenic route"):
+            mode = "bicycling"
+
+        url = build_gmaps_url(
+            o["address"],
+            d["address"],
+            wp_resolved if wp_resolved else None,
+            mode=mode,
+            avoid=avoid,
+            optimize=True,
+        )
+        st.session_state.prof_last_route_url = url
+        st.success(t.get("route_generated", "Ruta generada ({pref}).").format(pref=pref))
+        st.write(url)
+        st.image(make_qr(url), caption=t.get("scan_qr", "Escanea el QR para abrir la ruta"))
+
+        if st.session_state.prof_open_check:
+            st.markdown(f"### {t.get('open_status_now', 'Estado de apertura (ahora)')}")
+            def _flagline(prefix, det):
+                if det.get("open_now") is True:
+                    st.markdown(f"**{prefix}:** {t.get('open','Abierto')} – {det['address']}")
+                elif det.get("open_now") is False:
+                    st.markdown(f"**{prefix}:** {t.get('closed','Cerrado')} – {det['address']}")
+                else:
+                    st.markdown(f"**{prefix}:** {t.get('nodata','Sin datos')} – {det['address']}")
+            _flagline(t.get("origin", "Origen"), o)
+            for title, addr, flag in open_report:
+                if flag is True:
+                    st.markdown(f"**{title}:** {t.get('open','Abierto')} – {addr}")
+                elif flag is False:
+                    st.markdown(f"**{title}:** {t.get('closed','Cerrado')} – {addr}")
+                else:
+                    st.markdown(f"**{title}:** {t.get('nodata','Sin datos')} – {addr}")
+            _flagline(t.get("destination", "Destino"), d)
+
+    # Última ruta
+    if st.session_state.prof_last_route_url:
+        with st.expander(t.get("last_route", "Última ruta generada"), expanded=False):
+            st.write(st.session_state.prof_last_route_url)
+            st.image(make_qr(st.session_state.prof_last_route_url), caption=t.get("scan_qr", "Escanea el QR"))
