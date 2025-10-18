@@ -24,25 +24,27 @@ if "prof_last_route_url" not in st.session_state:
 # -------------------------------
 # Componente de búsqueda
 # -------------------------------
+# --- EN /workspaces/Apprutas/tab_profesional.py (función _search_box) ---
 def _search_box():
     st.markdown("---")
     
-    # Parámetros para tu función suggest_addresses
+    # CRUCIAL: 'key_bucket' y 'min_len' deben pasarse como keyword arguments
+    # para que suggest_addresses los extraiga de **kwargs.
     func_kwargs={
-        "key_bucket": "prof_top",
-        "min_len": 1 # Ya hemos cambiado 'types' a 'geocode' en app_utils para flexibilidad
+        "key_bucket": "prof_top", # <-- ESTO HACE QUE VUELVA A FUNCIONAR
+        "min_len": 1
     }
     
     # La barra de búsqueda
     selected_value = st_searchbox(
         search_function=suggest_addresses,
         placeholder="Buscar dirección... (presione ENTER para agregar)",
-        # 'key' del widget: CRUCIAL para poder resetearlo a "" desde _add_point_from_ui
+        # 'key' del widget: CRUCIAL para poder resetearlo
         key="prof_q_searchbox",
         # 'default_value' del widget: Toma el valor de sesión
         default_value=st.session_state.get("prof_q", ""),
         # argumentos pasados a suggest_addresses
-        func_kwargs=func_kwargs,
+        func_kwargs=func_kwargs, # <-- Se pasa el diccionario de argumentos
         label="Ruta de trabajo",
         label_visibility="collapsed"
     )
