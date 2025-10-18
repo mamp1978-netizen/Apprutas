@@ -1,7 +1,6 @@
 from urllib.parse import quote_plus
 from io import BytesIO
 import os
-import re
 import requests
 import streamlit as st
 import qrcode
@@ -20,62 +19,78 @@ def _get_key(name: str):
 
 GOOGLE_PLACES_API_KEY = _get_key("GOOGLE_PLACES_API_KEY")
 SERPAPI_API_KEY       = _get_key("SERPAPI_API_KEY") or _get_key("SERPAPI_KEY")
+
 REQUEST_TIMEOUT = 8
 
-# Sesgo por país (opcional)
-COUNTRY_BIAS = os.getenv("PLACES_COUNTRY", "es").lower().strip()  # "es", "fr", "us", etc.
 
-# ====== Gestión del sesgo de ubicación (lat/lon + radio) ======
-def set_location_bias(lat: float | None, lng: float | None, radius_m: int = 30000):
+# =========================================================
+# Geolocalización por IP (aproximada) y helpers de "bias"
+# =========================================================
+def ip_geo_bias() -> dict | None:
     """
-    Guarda en session_state un sesgo de ubicación para el Autocomplete de Google.
+    Intenta resolver ciudad/país y lat/lon aproximados por IP.
+    Devuelve dict: {"lat": float, "lng": float, "country": "ES"} o None.
     """
-    if lat is None or lng is None:
-        st.session_state["geo_bias"] = None
-    else:
-        st.session_state["geo_bias"] = {"lat": float(lat), "lng": float(lng), "radius": int(radius_m)}
+    try:
+        r = requests.get("https://ipapi.co/json/", timeout=6)
+        r.raise_for_status()
+        j = r.json()
+        lat, lon = j.get("latitude"), j.get("longitude")
+        country = (j.get("country_code") or "").upper() or None
+        if lat is None or lon is None:
+            return None
+        return {"lat": float(lat), "lng": float(lon), "country": country}
+    except Exception as e:
+        print("ip_geo_bias error:", e)
+        return None
 
-def _get_location_bias():
-    return st.session_state.get("geo_bias")
 
-# ---- helper seguro para el bucket de sugerencias ----
-def _bucket_for(key_bucket: str) -> dict:
-    if "suggest_maps" not in st.session_state:
-        st.session_state["suggest_maps"] = {}
-    sm = st.session_state["suggest_maps"]
-    if key_bucket not in sm:
-        sm[key_bucket] = {}
-    return sm[key_bucket]
+def current_geo_params() -> dict:
+    """
+    Lee de session_state el bias de geolocalización. Si no existe, devuelve vacío.
+    Formato: {"lat": ..., "lng": ..., "country": "ES", "radius": 30000}
+    """
+    gb = st.session_state.get("geo_bias") or {}
+    out = {
+        "lat": gb.get("lat"),
+        "lng": gb.get("lng"),
+        "country": gb.get("country"),
+        "radius": gb.get("radius", 30000),  # 30 km por defecto
+    }
+    # Limpia Nones si no hay lat/lng
+    if out["lat"] is None or out["lng"] is None:
+        out = {"country": out.get("country")}
+    return out
 
-# -------- Proveedores --------
+
+# =========================================================
+# Proveedores de sugerencias
+# =========================================================
 def provider_google_autocomplete(query: str, max_results: int = 8):
     """
-    Autocomplete con:
-      - types=address (mejor para portales)
-      - language=es
-      - components=country:XX (si hay)
-      - sesgo de ubicación (location + radius) si está disponible
+    Google Autocomplete con sesgo local si hay geo_bias en session_state.
+    - Aplica language=es
+    - Si hay lat/lng -> añade location y radius (sesgo de proximidad).
+    - Si hay country -> añade components=country:XX (no filtra estrictamente, sesga).
     """
     if not GOOGLE_PLACES_API_KEY or not query:
         return []
+
     try:
         base = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
-        params = [
-            f"input={quote_plus(query)}",
-            "types=address",
-            "language=es",
-            f"key={GOOGLE_PLACES_API_KEY}",
-        ]
-        if COUNTRY_BIAS:
-            params.append(f"components=country:{COUNTRY_BIAS}")
+        q = f"input={quote_plus(query)}&types=geocode&language=es"
+        gp = current_geo_params()
 
-        # Bias geográfico opcional
-        bias = _get_location_bias()
-        if bias:
-            params.append(f"location={bias['lat']},{bias['lng']}")
-            params.append(f"radius={bias['radius']}")
+        # Sesgo por país (suave)
+        if gp.get("country"):
+            q += f"&components=country:{gp['country']}"
 
-        url = f"{base}?{'&'.join(params)}"
+        # Sesgo por proximidad (location/radius) si tenemos lat/lon
+        if gp.get("lat") is not None and gp.get("lng") is not None:
+            q += f"&location={gp['lat']},{gp['lng']}&radius={int(gp.get('radius', 30000))}"
+
+        url = f"{base}?{q}&key={GOOGLE_PLACES_API_KEY}"
+
         r = requests.get(url, timeout=REQUEST_TIMEOUT)
         r.raise_for_status()
         preds = r.json().get("predictions", [])
@@ -89,12 +104,18 @@ def provider_google_autocomplete(query: str, max_results: int = 8):
         print("Google autocomplete error:", e)
         return []
 
+
 def provider_serpapi_maps(query: str, max_results: int = 8):
     if not SERPAPI_API_KEY or not query:
         return []
     try:
+        gp = current_geo_params()
+        # Añadimos lat/lon si están disponibles para acercar más resultados
+        loc_filter = ""
+        if gp.get("lat") is not None and gp.get("lng") is not None:
+            loc_filter = f"&ll=@{gp['lat']},{gp['lng']},15z"
         url = (f"https://serpapi.com/search.json?engine=google_maps&q={quote_plus(query)}&hl=es"
-               f"&api_key={SERPAPI_API_KEY}")
+               f"{loc_filter}&api_key={SERPAPI_API_KEY}")
         r = requests.get(url, timeout=REQUEST_TIMEOUT)
         r.raise_for_status()
         res = r.json().get("local_results") or []
@@ -113,12 +134,14 @@ def provider_serpapi_maps(query: str, max_results: int = 8):
         print("SerpAPI error:", e)
         return []
 
+
 def provider_nominatim(query: str, max_results: int = 8):
     if not query:
         return []
     try:
         url = (f"https://nominatim.openstreetmap.org/search?q={quote_plus(query)}"
                "&format=json&limit={}".format(max_results))
+        # Buen User-Agent para Nominatim
         headers = {"User-Agent": "PlanificadorRutas/1.0 (streamlit)"}
         r = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
         r.raise_for_status()
@@ -128,19 +151,19 @@ def provider_nominatim(query: str, max_results: int = 8):
             desc = it.get("display_name")
             lat, lng = it.get("lat"), it.get("lon")
             if desc:
-                out.append((desc, {"provider":"nominatim","lat":lat,"lng":lng,"desc":desc}))
+                out.append((desc, {"provider": "nominatim", "lat": lat, "lng": lng, "desc": desc}))
         return out
     except Exception as e:
         print("Nominatim error:", e)
         return []
+
 
 def get_place_coords_from_google(place_id: str):
     if not GOOGLE_PLACES_API_KEY:
         return {}
     try:
         url = ("https://maps.googleapis.com/maps/api/place/details/json"
-               f"?place_id={quote_plus(place_id)}"
-               f"&fields=geometry,opening_hours,formatted_address,name"
+               f"?place_id={quote_plus(place_id)}&fields=geometry,opening_hours,formatted_address,name"
                f"&language=es&key={GOOGLE_PLACES_API_KEY}")
         r = requests.get(url, timeout=REQUEST_TIMEOUT)
         r.raise_for_status()
@@ -156,19 +179,16 @@ def get_place_coords_from_google(place_id: str):
         print("Google details error:", e)
         return {}
 
-# -------- Utilidades para conservar número --------
-_num_pat = re.compile(r"\d+")
 
-def _has_number(s: str | None) -> bool:
-    if not s:
-        return False
-    return bool(_num_pat.search(s))
-
-# -------- Autocompletado unificado --------
+# =========================================================
+# Autocompletado unificado (con copia al bucket de sesión)
+# =========================================================
 def suggest_addresses(query: str, key_bucket: str):
     q = (query or "").strip()
     if len(q) < 2:
         return []
+
+    # 1) Google (con sesgo); 2) SerpAPI; 3) Nominatim
     results = provider_google_autocomplete(q) or provider_serpapi_maps(q) or provider_nominatim(q) or []
     clean = []
     for item in results:
@@ -176,54 +196,66 @@ def suggest_addresses(query: str, key_bucket: str):
             clean.append(item)
     if not clean:
         return []
-    bucket = _bucket_for(key_bucket)
+
+    # Copiar al bucket
+    if "suggest_maps" not in st.session_state:
+        st.session_state["suggest_maps"] = {}
+    sm = st.session_state["suggest_maps"]
+    if key_bucket not in sm:
+        sm[key_bucket] = {}
+    bucket = sm[key_bucket]
+
     labels = []
     for label, meta in clean:
         bucket[label] = meta
         labels.append(label)
     return labels
 
+
 def resolve_selection(label: str, key_bucket: str):
+    """
+    Devuelve {address, lat, lng, open_now}. Si hay meta con place_id (Google),
+    hace details para preservar número de portal y nombre formateado.
+    """
     if not label:
         return {"address": "", "lat": None, "lng": None, "open_now": None}
 
+    # Buscar en bucket concreto
     meta = st.session_state.get("suggest_maps", {}).get(key_bucket, {}).get(label)
 
+    # Búsqueda de rescate: si no está en ese bucket, busca en todos
     if not meta:
-        # Buscar en todos los sub-buckets por si se copió desde otro
-        sm = st.session_state.get("suggest_maps", {})
-        for bucket in sm.values():
-            m = bucket.get(label)
-            if m:
-                meta = m
+        for bname, bdict in st.session_state.get("suggest_maps", {}).items():
+            if isinstance(bdict, dict) and label in bdict:
+                meta = bdict[label]
                 break
 
     if not meta:
+        # Sin metadatos: devolvemos texto literal
         return {"address": label, "lat": None, "lng": None, "open_now": None}
 
+    # Con place_id -> details en Google para dirección exacta (y número)
     if meta.get("provider") == "google" and meta.get("place_id"):
         det = get_place_coords_from_google(meta["place_id"])
-        final_addr = det.get("address") or label
-        if not _has_number(final_addr) and _has_number(label):
-            final_addr = label
         return {
-            "address": final_addr,
+            "address": det.get("address") or label,
             "lat": det.get("lat"),
             "lng": det.get("lng"),
             "open_now": det.get("open_now"),
         }
 
-    final_addr = meta.get("desc") or label
-    if not _has_number(final_addr) and _has_number(label):
-        final_addr = label
+    # Otros proveedores
     return {
-        "address": final_addr,
+        "address": meta.get("desc") or label,
         "lat": meta.get("lat"),
         "lng": meta.get("lng"),
         "open_now": meta.get("open_now"),
     }
 
-# -------- URL Google Maps + QR --------
+
+# =========================================================
+# URL Google Maps + QR
+# =========================================================
 def build_gmaps_url(origin: str, destination: str, waypoints=None, *, mode="driving", avoid=None, optimize=True):
     base = "https://www.google.com/maps/dir/?api=1"
     parts = [
@@ -239,6 +271,7 @@ def build_gmaps_url(origin: str, destination: str, waypoints=None, *, mode="driv
             wp = f"optimize:true|{wp}"
         parts.append(f"waypoints={quote_plus(wp)}")
     return base + "&" + "&".join(parts)
+
 
 def make_qr(url: str) -> BytesIO:
     qr = qrcode.QRCode(border=1, box_size=6)
