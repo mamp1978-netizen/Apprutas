@@ -2,3 +2,4 @@
 streamlit
 googlemaps
 qrcode
+streamlit_searchbox
