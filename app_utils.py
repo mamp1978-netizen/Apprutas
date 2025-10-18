@@ -1,4 +1,3 @@
-# app_utils.py
 from urllib.parse import quote_plus
 from io import BytesIO
 import os
@@ -163,7 +162,12 @@ def get_place_coords_from_google(place_id: str):
 # -----------------------------------
 # Autocompletado unificado + resolución
 # -----------------------------------
-def suggest_addresses(query: str, key_bucket: str, min_len: int = 1):
+# LA FUNCIÓN CRÍTICA, CORREGIDA:
+def suggest_addresses(query: str, key_bucket: str, min_len: int = 1, *args, **kwargs):
+    """Obtiene sugerencias de direcciones de múltiples proveedores.
+    
+    Acepta *args, **kwargs para ser compatible con streamlit_searchbox.
+    """
     q = (query or "").strip()
     if len(q) < min_len:
         return []
@@ -177,7 +181,8 @@ def suggest_addresses(query: str, key_bucket: str, min_len: int = 1):
     # sanea
     clean = []
     for item in results:
-        if isinstance(item, (list, tuple)) and item and isinstance(item[0], str):
+        # Aseguramos que el resultado es un (label, meta) y que label es string
+        if isinstance(item, (list, tuple)) and len(item) == 2 and isinstance(item[0], str):
             clean.append(item)
     if not clean:
         return []

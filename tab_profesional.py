@@ -1,6 +1,6 @@
 import requests
 import streamlit as st
-from streamlit_searchbox import st_searchbox # <--- NUEVA IMPORTACIÓN
+from streamlit_searchbox import st_searchbox # <--- Importación necesaria
 from app_utils import (
     suggest_addresses,
     resolve_selection,
@@ -8,6 +8,8 @@ from app_utils import (
     make_qr,
     set_location_bias,
     _get_key,
+    # Asegúrate de que todas tus funciones estén importadas
+    _use_ip_bias # Asumo que esta función también está en app_utils o la defines aquí
 )
 
 # -------------------------------
@@ -18,39 +20,43 @@ def _init_state():
     ss.setdefault("prof_points", [])
     ss.setdefault("prof_last_route_url", None)
     ss.setdefault("prof_route_type", "Más rápido")
-    # Eliminamos prof_sel_idx y prof_q como tal, pero mantenemos prof_q para el valor de la barra
-    ss.setdefault("prof_q", "")
+    # Mantenemos prof_q para el valor de la barra, que ahora es gestionado por searchbox
+    ss.setdefault("prof_q", "") 
 
 # -------------------------------
 # IP -> lat/lng (sesgo ubicación)
 # -------------------------------
-def _use_ip_bias() -> bool:
-    try:
-        ip = requests.get("https://ipapi.co/json/", timeout=6).json()
-        lat, lng = ip.get("latitude"), ip.get("longitude")
-        if lat and lng:
-            set_location_bias(float(lat), float(lng), 50000)  # ~50 km
-            return True
-    except Exception:
-        pass
-    return False
-
+# Asumo que _use_ip_bias está en app_utils.py, si no, lo debes definir aquí o importarlo
+try:
+    # Intenta importar la función desde app_utils si no estaba antes
+    from app_utils import _use_ip_bias
+except ImportError:
+    # Si no existe, usamos la implementación local del código que mostraste
+    def _use_ip_bias() -> bool:
+        try:
+            ip = requests.get("https://ipapi.co/json/", timeout=6).json()
+            lat, lng = ip.get("latitude"), ip.get("longitude")
+            if lat and lng:
+                set_location_bias(float(lat), float(lng), 50000)  # ~50 km
+                return True
+        except Exception:
+            pass
+        return False
 # -------------------------------
 # Añadir punto según lo visible
 # -------------------------------
 def _add_point_from_ui():
-    # El valor seleccionado (o escrito) por el usuario ya está en st.session_state["prof_q"]
+    # El valor seleccionado (o escrito) por el usuario está en st.session_state["prof_q"]
     value = (st.session_state.get("prof_q") or "").strip()
 
-    if not value:
+    if not value or value.lower() in ["", "buscar dirección… (presione enter para agregar)"]:
         st.warning("Escribe o selecciona una dirección.")
         return
 
-    # Añadimos el valor al listado de puntos
     st.session_state["prof_points"].append(value)
     st.success(f"Añadido: {value}")
     
-    # Limpiamos la barra de búsqueda después de añadir
+    # Limpiar la barra de búsqueda después de añadir
     st.session_state["prof_q"] = ""
     st.rerun()
 
@@ -58,8 +64,7 @@ def _add_point_from_ui():
 # Buscador con comportamiento Google-like
 # -------------------------------
 def _search_box():
-    # Usamos st_searchbox, que se encarga de la entrada de texto y las sugerencias.
-    # Necesita tu función suggest_addresses para obtener la lista de sugerencias.
+    # USAMOS st_searchbox: la función suggest_addresses ahora acepta *args y **kwargs
     selected_value = st_searchbox(
         search_function=suggest_addresses,
         label="Buscar dirección… (presione ENTER para agregar)",
@@ -73,21 +78,18 @@ def _search_box():
         }
     )
     
-    # El valor seleccionado/escrito se guarda inmediatamente en el estado
-    # para ser usado por el botón "Añadir".
+    # El valor seleccionado/escrito se guarda en el estado para el botón "Añadir".
     st.session_state["prof_q"] = selected_value
 
-    # --- Botones fuera del componente de búsqueda ---
+    # --- Botones ---
     col1, col2, col3 = st.columns([0.28, 0.28, 0.44])
     with col1:
-        # El botón de Añadir llamará a la lógica de _add_point_from_ui()
         submitted = st.button("Añadir (ENTER)", type="primary", key="add_btn")
     with col2:
         clear = st.button("Limpiar", key="clear_btn")
     with col3:
         geobias = st.button("📍 Usar mi ubicación", key="geo_btn")
 
-    # fuera de la definición de los componentes para manejar la acción
     if submitted:
         _add_point_from_ui()
     if clear:
@@ -142,8 +144,6 @@ def mostrar_profesional(t: dict):
         if len(pts) < 2:
             st.warning("Debes tener origen y destino.")
             return
-        # Nota: La lógica de resolve_selection en tu archivo app_utils es crucial 
-        # para que funcione el despliegue de ruta después de la selección.
         o = resolve_selection(pts[0], "prof_point_0")
         d = resolve_selection(pts[-1], f"prof_point_{len(pts)-1}")
         wp = [resolve_selection(p, f"prof_point_{i}")["address"] for i, p in enumerate(pts[1:-1], 1)]
