@@ -49,6 +49,7 @@ TEXTS = {
         "btn_down": "↓",
         "btn_del": "🗑️",
         "generate_prof": "Generar ruta profesional",
+        "no_suggestions": "Sin sugerencias todavía",
 
         # Viajero
         "trav_header": "Plan rápido (viajero)",
@@ -123,6 +124,7 @@ TEXTS = {
         "btn_down": "↓",
         "btn_del": "🗑️",
         "generate_prof": "Generate work route",
+        "no_suggestions": "No suggestions yet",
 
         # Traveler
         "trav_header": "Quick plan (traveler)",
