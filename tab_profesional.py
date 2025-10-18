@@ -106,33 +106,20 @@ def _run_search():
         st.session_state["prof_selection"] = ""
     else:
         st.session_state["prof_selection"] = suggestions[0]
-
-
 # -------------------------------
 # Componente de búsqueda y lógica de ubicación
 # -------------------------------
-
-# --- EN tab_profesional.py ---
-
-# ... (otras funciones y código) ...
-
-# -------------------------------
-# Componente de búsqueda y lógica de ubicación
-# -------------------------------
-# --- EN tab_profesional.py ---
-
-# ... (código anterior) ...
 
 def _search_box():
     st.markdown("---")
     
-    # 1. ENTRADA DE TEXTO (AHORA CON on_change PARA LA BÚSQUEDA AUTOMÁTICA AL DAR ENTER)
+    # 1. ENTRADA DE TEXTO
     st.text_input(
         "Buscar dirección...",
         key="prof_text_input",
         label_visibility="collapsed",
         placeholder="Escribe la dirección (mín. 3 letras) y pulsa ENTER",
-        on_change=_run_search # <--- SIN BOTÓN DE LUPA
+        on_change=_run_search 
     )
     
     # 2. SELECTBOX CON SUGERENCIAS
@@ -146,11 +133,16 @@ def _search_box():
             label_visibility="visible"
         )
     
-    # 3. Botones de acción y ubicación (2 columnas ahora)
+    # 3. Botones de acción y ubicación
     col_add, col_clear, col_loc = st.columns([1.5, 1, 3])
 
     with col_add:
-        st.button("Añadir", on_click=_add_point_from_ui, type="primary")
+        st.button(
+            "Añadir", 
+            on_click=_add_point_from_ui, 
+            type="primary",
+            key="prof_add_btn" # <--- ¡SOLUCIÓN! KEY ÚNICA PARA EL BOTÓN
+        )
 
     with col_clear:
         st.button("Limpiar", on_click=_clear_points)
