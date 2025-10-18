@@ -49,14 +49,26 @@ def _add_point(value: str | None, t: dict):
     if not value:
         st.warning(t["type_or_select"])
         return
-    if value in st.session_state.prof_points:
-        st.info("⚠️ Ya estaba en la lista.")
-        return
-    if len(st.session_state.prof_points) >= MAX_POINTS:
-        st.warning(f"Has alcanzado el máximo de {MAX_POINTS} puntos.")
-        return
+
+    # 1) Añadimos el texto a la lista visible
     st.session_state.prof_points.append(value)
     st.success(t["added"].format(x=value))
+
+    # 2) Si existe meta en el bucket 'prof_top', la copiamos al bucket del punto recién creado
+    #    para que luego resolve_selection encuentre el place_id correcto.
+    try:
+        sm = st.session_state.get("suggest_maps", {})
+        top_meta = sm.get("prof_top", {}).get(value)
+        if top_meta:
+            idx = len(st.session_state.prof_points) - 1
+            bucket_name = f"prof_point_{idx}"
+            if "suggest_maps" not in st.session_state:
+                st.session_state["suggest_maps"] = {}
+            if bucket_name not in st.session_state["suggest_maps"]:
+                st.session_state["suggest_maps"][bucket_name] = {}
+            st.session_state["suggest_maps"][bucket_name][value] = top_meta
+    except Exception:
+        pass
 
 def _add_point_from_location(t: dict):
     guess = _ip_location_to_address()
