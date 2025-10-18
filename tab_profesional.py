@@ -88,38 +88,45 @@ def _init_state():
 # ---------------- UI ----------------
 
 def search_and_add_top(t: dict):
+    # Form con botones dentro (evita el error "Missing Submit Button")
     with st.form(key="prof_top_form", clear_on_submit=True):
         q = st.text_input(
-            t["search_label"],
+            t.get("search_label", "Buscar dirección… (pulsa ENTER para añadir)"),
             key="prof_top_q",
             placeholder="Calle, número, ciudad… / Street, number, city…"
         )
 
+        # Sugerencias
         suggestions = suggest_addresses(q, "prof_top") if q else []
-        sel = None
+        picked = None
         if suggestions:
-            st.caption(t["suggestions"])
-            # Usamos selectbox para que el usuario confirme explícitamente
-            sel = st.selectbox(
-                t["select_suggestion"],
-                options=suggestions,
+            st.caption(t.get("suggestions", "Sugerencias:"))
+            st.write("• " + "\n• ".join(suggestions[:6]))
+            picked = st.selectbox(
+                t.get("select_suggestion", "Elige una sugerencia (o pulsa ENTER)"),
+                suggestions,
                 index=0,
-                key=f"prof_top_pick_{len(suggestions)}",
+                key=f"prof_top_pick_{len(suggestions)}"
             )
+        else:
+            st.caption(t.get("no_suggestions", "Sin sugerencias todavía"))
 
+        # Botones dentro del formulario
         c1, c2 = st.columns([0.7, 0.3])
         with c1:
-            submitted = st.form_submit_button(t["add_enter"])
+            submitted = st.form_submit_button(t.get("add_enter", "Añadir (ENTER)"))
         with c2:
-            loc = st.form_submit_button(t["use_my_location"])
+            loc = st.form_submit_button(t.get("use_my_location", "📍 Usar mi ubicación"))
 
-        if submitted:
-            if sel:
-                _add_point(sel, t)
-            else:
-                _add_point(q, t)
-        if loc:
-            _add_point_from_location(t)
+    # Acciones (fuera del 'with', pero los botones se declaran dentro del form)
+    if submitted:
+        if picked:
+            _add_point(picked, t)
+        else:
+            _add_point(q, t)
+
+    if loc:
+        _add_point_from_location(t)
 
 
 def mostrar_profesional(t: dict):
