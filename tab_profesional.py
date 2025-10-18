@@ -22,9 +22,10 @@ if "prof_q" not in st.session_state:
     st.session_state["prof_q"] = ""
 if "prof_last_route_url" not in st.session_state:
     st.session_state["prof_last_route_url"] = None
+# La clave '_loc_bias' se gestiona aquí y en app_utils.py
 
 # -------------------------------
-# Componente de búsqueda
+# Componente de búsqueda y lógica de ubicación
 # -------------------------------
 def _search_box():
     st.markdown("---")
@@ -49,7 +50,6 @@ def _search_box():
         label_visibility="collapsed"
     )
 
-    # Actualiza la variable de sesión
     st.session_state["prof_q"] = selected_value
 
     # Botones de acción
@@ -61,11 +61,22 @@ def _search_box():
     with col_clear:
         st.button("Limpiar", on_click=_clear_points)
 
+    # --- LÓGICA DE ACTIVACIÓN DE UBICACIÓN (MODIFICACIÓN) ---
     with col_loc:
-        st.checkbox("Usar mi ubicación", key="prof_use_loc", value=False)
-        if st.session_state["prof_use_loc"] and not st.session_state.get("_loc_bias"):
-            _use_ip_bias()
-
+        # Checkbox que activa/desactiva el sesgo
+        is_loc_active = st.checkbox("Usar mi ubicación", key="prof_use_loc", value=st.session_state.get("_loc_bias") is not None)
+        
+        if is_loc_active:
+             # Si se activa el checkbox y NO HAY sesgo, lo creamos.
+             if st.session_state.get("_loc_bias") is None:
+                 _use_ip_bias() # Establece el sesgo en st.session_state["_loc_bias"]
+                 st.rerun() # Recarga para que suggest_addresses lea el nuevo sesgo
+        else:
+             # Si se desactiva el checkbox y SÍ HAY sesgo, lo eliminamos.
+             if st.session_state.get("_loc_bias") is not None:
+                 del st.session_state["_loc_bias"]
+                 st.rerun() # Recarga para que suggest_addresses deje de usar el sesgo
+                 
     st.markdown("---")
 
 # -------------------------------
@@ -86,6 +97,7 @@ def _add_point_from_ui():
     # Limpiar el estado del widget y del cache de opciones del searchbox (CORRECCIÓN)
     st.session_state["prof_q"] = ""
     st.session_state["prof_q_searchbox"] = ""
+    
     # Soluciona: TypeError: list indices must be integers, not str
     if 'prof_q_searchboxoptions_ts' in st.session_state:
         del st.session_state['prof_q_searchboxoptions_ts'] 
