@@ -1,22 +1,21 @@
 # app_utils.py
-from urllib.parse import quote_plus
-from io import BytesIO
 import os
 import requests
 import streamlit as st
 import qrcode
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-# -------- Carga .env --------
-load_dotenv()
+# -------- Carga .env (si existe) --------
+# En local: lee .env. En Streamlit Cloud: suele no existir y usaremos st.secrets.
+load_dotenv(find_dotenv(), override=False)
 
 def _get_key(name: str):
     try:
-        if name in st.secrets:
+        if name in st.secrets:     # Streamlit Cloud / st.secrets
             return st.secrets[name]
     except Exception:
         pass
-    return os.getenv(name)
+    return os.getenv(name)         # .env / variables de entorno
 
 GOOGLE_PLACES_API_KEY = _get_key("GOOGLE_PLACES_API_KEY")
 SERPAPI_API_KEY       = _get_key("SERPAPI_API_KEY") or _get_key("SERPAPI_KEY")
