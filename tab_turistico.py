@@ -1,13 +1,18 @@
 # tab_turistico.py
 import requests
 import streamlit as st
+from streamlit_searchbox import st_searchbox 
 from app_utils import (
     suggest_addresses,
-    resolve_selection,
+    resolve_selection, # <--- ¡Asegúrate de que ESTÉ aquí!
     build_gmaps_url,
     make_qr,
     set_location_bias,
+    _get_key,
+    _use_ip_bias 
 )
+
+# ... el resto del código ...
 
 def _ip_guess_bias():
     try:
