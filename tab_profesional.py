@@ -1,5 +1,3 @@
-# Contenido Completo de /workspaces/Apprutas/tab_profesional.py
-
 import requests
 import streamlit as st
 from streamlit_searchbox import st_searchbox 
