@@ -119,17 +119,20 @@ def _run_search():
 # -------------------------------
 # Componente de búsqueda y lógica de ubicación
 # -------------------------------
+# --- EN tab_profesional.py ---
+
+# ... (código anterior) ...
+
 def _search_box():
     st.markdown("---")
     
-    # 1. ENTRADA DE TEXTO
-    # Se utiliza el callback on_change para ejecutar la búsqueda al presionar ENTER
+    # 1. ENTRADA DE TEXTO (AHORA CON on_change PARA LA BÚSQUEDA AUTOMÁTICA AL DAR ENTER)
     st.text_input(
         "Buscar dirección...",
         key="prof_text_input",
         label_visibility="collapsed",
         placeholder="Escribe la dirección (mín. 3 letras) y pulsa ENTER",
-        on_change=_run_search # <- Llama a la función de búsqueda cuando se presiona ENTER
+        on_change=_run_search # <--- SIN BOTÓN DE LUPA
     )
     
     # 2. SELECTBOX CON SUGERENCIAS
@@ -143,8 +146,7 @@ def _search_box():
             label_visibility="visible"
         )
     
-    # 3. Botones de acción y ubicación
-    # Reducimos las columnas de 3 a 2, ya que eliminamos el botón de búsqueda
+    # 3. Botones de acción y ubicación (2 columnas ahora)
     col_add, col_clear, col_loc = st.columns([1.5, 1, 3])
 
     with col_add:
