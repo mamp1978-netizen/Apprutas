@@ -1,11 +1,28 @@
 # tab_profesional.py
 import streamlit as st
 import requests
-from app_utils import suggest_addresses, resolve_selection, build_gmaps_url, make_qr
+from app_utils import (
+    suggest_addresses,
+    resolve_selection,
+    build_gmaps_url,
+    make_qr,
+)
+
+# --- Parámetros de seguridad/UX ---
+MAX_POINTS = 30  # límite suave para evitar URLs enormes; puedes subirlo si quieres
+
+def _current_lang() -> str:
+    try:
+        return (st.session_state.get("lang") or "es").lower()
+    except Exception:
+        return "es"
 
 def _ip_location_to_address() -> str | None:
+    """Intenta inferir ubicación aproximada por IP pública (no requiere permisos del navegador)."""
     try:
-        ip = requests.get("https://ipapi.co/json/", timeout=6).json()
+        r = requests.get("https://ipapi.co/json/", timeout=6)
+        r.raise_for_status()
+        ip = r.json()
         city = ip.get("city") or ""
         region = ip.get("region") or ""
         country = ip.get("country_name") or ""
@@ -23,14 +40,20 @@ def _remove_point(idx: int, t: dict):
 def _move_point(idx: int, direction: str):
     pts = st.session_state.prof_points
     if direction == "up" and idx > 0:
-        pts[idx-1], pts[idx] = pts[idx], pts[idx-1]
+        pts[idx - 1], pts[idx] = pts[idx], pts[idx - 1]
     elif direction == "down" and idx < len(pts) - 1:
-        pts[idx+1], pts[idx] = pts[idx], pts[idx+1]
+        pts[idx + 1], pts[idx] = pts[idx], pts[idx + 1]
 
 def _add_point(value: str | None, t: dict):
     value = (value or "").strip()
     if not value:
         st.warning(t["type_or_select"])
+        return
+    if value in st.session_state.prof_points:
+        st.info("⚠️ Ya estaba en la lista.")
+        return
+    if len(st.session_state.prof_points) >= MAX_POINTS:
+        st.warning(f"Has alcanzado el máximo de {MAX_POINTS} puntos.")
         return
     st.session_state.prof_points.append(value)
     st.success(t["added"].format(x=value))
@@ -39,8 +62,7 @@ def _add_point_from_location(t: dict):
     guess = _ip_location_to_address()
     if guess:
         st.session_state.prof_last_location_guess = guess
-        st.session_state.prof_points.append(guess)
-        st.success(t["loc_added"].format(x=guess))
+        _add_point(guess, t)
     else:
         st.warning(t["loc_failed"])
 
@@ -57,35 +79,44 @@ def _init_state():
         st.session_state.prof_route_type = None  # lo ponemos al crear el select
 
 def search_and_add_top(t: dict):
+    lang = _current_lang()
     with st.form(key="prof_top_form", clear_on_submit=True):
-        q = st.text_input(t["search_label"], key="prof_top_q", placeholder="Calle, número, ciudad… / Street, number, city…")
-        suggestions = suggest_addresses(q, "prof_top") if q else []
+        q = st.text_input(
+            t["search_label"],
+            key="prof_top_q",
+            placeholder="Calle, número, ciudad… / Street, number, city…",
+        )
+
+        # Sugerencias (multi-proveedor via utils) según idioma activo
+        suggestions = suggest_addresses(q, "prof_top", lang=lang) if q else []
         if suggestions:
             st.caption(t["suggestions"])
             for s in suggestions[:6]:
                 st.write(f"• {s}")
+
         c1, c2 = st.columns([0.7, 0.3])
         with c1:
             submitted = st.form_submit_button(t["add_enter"])
         with c2:
             loc = st.form_submit_button(t["use_my_location"])
+
         if submitted:
             if suggestions:
+                # Selecciona la primera sugerencia (ENTER rápido)
                 _add_point(suggestions[0], t)
             else:
                 _add_point(q, t)
+
         if loc:
             _add_point_from_location(t)
 
 def mostrar_profesional(t: dict):
     _init_state()
-
     st.subheader(t["prof_header"])
     st.caption(t["prof_caption"])
 
     # Tipos de ruta traducidos
     route_types = t["route_types"]
-    # default index
     default_idx = 0
     if st.session_state.prof_route_type and st.session_state.prof_route_type in route_types:
         default_idx = route_types.index(st.session_state.prof_route_type)
@@ -93,8 +124,8 @@ def mostrar_profesional(t: dict):
     st.session_state.prof_route_type = st.selectbox(
         t["route_type_label"], route_types, index=default_idx
     )
-    st.divider()
 
+    st.divider()
     search_and_add_top(t)
 
     st.markdown(f"### {t['list_title']}")
@@ -104,28 +135,44 @@ def mostrar_profesional(t: dict):
     else:
         for i, p in enumerate(pts):
             prefix = (
-                t["origin"] if i == 0
-                else (t["destination"] if i == len(pts) - 1
-                      else t["stop_num"].format(i=i))
+                t["origin"]
+                if i == 0
+                else (t["destination"] if i == len(pts) - 1 else t["stop_num"].format(i=i))
             )
             c_lbl, c_up, c_down, c_del = st.columns([0.76, 0.08, 0.08, 0.08])
             with c_lbl:
                 st.write(f"**{prefix}:** {p}")
             with c_up:
-                st.button(t["btn_up"], key=f"up_{i}_{len(pts)}", on_click=_move_point, args=(i, "up"),
-                          disabled=(i == 0), use_container_width=True)
+                st.button(
+                    t["btn_up"],
+                    key=f"up_{i}_{len(pts)}",
+                    on_click=_move_point,
+                    args=(i, "up"),
+                    disabled=(i == 0),
+                    use_container_width=True,
+                )
             with c_down:
-                st.button(t["btn_down"], key=f"down_{i}_{len(pts)}", on_click=_move_point, args=(i, "down"),
-                          disabled=(i == len(pts)-1), use_container_width=True)
+                st.button(
+                    t["btn_down"],
+                    key=f"down_{i}_{len(pts)}",
+                    on_click=_move_point,
+                    args=(i, "down"),
+                    disabled=(i == len(pts) - 1),
+                    use_container_width=True,
+                )
             with c_del:
-                st.button(t["btn_del"], key=f"del_{i}_{len(pts)}", on_click=_remove_point, args=(i, t),
-                          use_container_width=True)
+                st.button(
+                    t["btn_del"],
+                    key=f"del_{i}_{len(pts)}",
+                    on_click=_remove_point,
+                    args=(i, t),
+                    use_container_width=True,
+                )
 
     st.divider()
 
     st.session_state.prof_open_check = st.checkbox(
-        t["open_now_check"],
-        value=st.session_state.prof_open_check
+        t["open_now_check"], value=st.session_state.prof_open_check
     )
 
     if st.button(t["generate_prof"], type="primary", key="btn_generar_prof"):
@@ -133,24 +180,27 @@ def mostrar_profesional(t: dict):
             st.error(t["need_two_points"])
             return
 
+        lang = _current_lang()
+
         o_raw = pts[0]
         d_raw = pts[-1]
         wp_raw = pts[1:-1]
 
-        o = resolve_selection(o_raw, "prof_point_0")
-        d = resolve_selection(d_raw, f"prof_point_{len(pts)-1}")
+        # Resolver cada label usando el bucket correspondiente y el idioma
+        o = resolve_selection(o_raw, "prof_point_0", lang=lang)
+        d = resolve_selection(d_raw, f"prof_point_{len(pts)-1}", lang=lang)
 
         wp_resolved = []
         open_report = []
         for i, label in enumerate(wp_raw, start=1):
-            det = resolve_selection(label, f"prof_point_{i}")
+            det = resolve_selection(label, f"prof_point_{i}", lang=lang)
             wp_resolved.append(det["address"])
             if st.session_state.prof_open_check:
                 open_report.append((t["stop_num"].format(i=i), det.get("address"), det.get("open_now")))
 
-        # Preferencias de ruta
+        # Preferencias de ruta → parámetros URL
         mode = "driving"
-        avoid = []
+        avoid: list[str] = []
         pref = st.session_state.prof_route_type
         if pref in ("Más corto", "Shortest"):
             avoid = ["tolls", "highways"]
@@ -167,7 +217,7 @@ def mostrar_profesional(t: dict):
             wp_resolved if wp_resolved else None,
             mode=mode,
             avoid=avoid,
-            optimize=True
+            optimize=True,
         )
         st.session_state.prof_last_route_url = url
 
@@ -177,7 +227,7 @@ def mostrar_profesional(t: dict):
 
         if st.session_state.prof_open_check:
             st.markdown(f"### {t['open_status_now']}")
-            def _flagline(prefix, det):
+            def _flagline(prefix: str, det: dict):
                 if det.get("open_now") is True:
                     st.markdown(f"**{prefix}:** {t['open']} – {det['address']}")
                 elif det.get("open_now") is False:
