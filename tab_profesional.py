@@ -85,29 +85,58 @@ def _add_point_from_ui():
     """Añade la dirección seleccionada/escrita a la lista y limpia la barra."""
     value = (st.session_state.get("prof_q") or "").strip()
 
+    # Verificar si el valor es válido (ignorando el placeholder vacío)
     if not value or value.lower() in ["", "buscar dirección… (presione enter para agregar)"]:
         st.warning("Escribe o selecciona una dirección.")
         return
 
-    # Añadir a la lista
+    # 1. Añadir a la lista
     st.session_state["prof_points"].append(value)
     st.success(f"Añadido: {value}")
     
-    # Limpiar el estado del widget y del cache de opciones del searchbox 
-    st.session_state["prof_q"] = ""
-    st.session_state["prof_q_searchbox"] = ""
+    # 2. Limpieza exhaustiva del estado del widget y del caché:
     
-    # Reseteo del caché interno del searchbox para evitar TypeError: list indices must be integers, not str
-    if 'prof_q_searchboxoptions_ts' in st.session_state:
-        del st.session_state['prof_q_searchboxoptions_ts'] 
+    # Limpiar el valor que se muestra en la barra de búsqueda
+    st.session_state["prof_q"] = ""
+    # Forzar la limpieza del widget de búsqueda (se usa la key del widget)
+    st.session_state["prof_q_searchbox"] = "" 
+    
+    # Limpiar el caché de sugerencias de la sesión que usa app_utils
+    if 'prof_top_suggestions' in st.session_state:
+        del st.session_state['prof_top_suggestions']
+
+    # Limpiar el caché de opciones internas del st_searchbox (CRUCIAL para los errores de índices y renderizado)
+    # NOTA: st_searchbox usa 'key_ts' o 'options_ts' en la sesión, dependiendo de la versión.
+    keys_to_delete = [
+        'prof_q_searchboxoptions_ts', # Versión común
+        'prof_q_searchbox_ts',        # Posiblemente usado
+        'prof_q_searchbox_options'
+    ]
+    for key in keys_to_delete:
+        if key in st.session_state:
+            del st.session_state[key]
         
+    # 3. Forzar el re-renderizado
     st.rerun()
 
 def _clear_points():
+    """Limpia la lista de puntos y el estado de la ruta."""
     st.session_state["prof_points"] = []
     st.session_state["prof_last_route_url"] = None
-    if 'prof_q_searchboxoptions_ts' in st.session_state:
-        del st.session_state['prof_q_searchboxoptions_ts']
+    st.session_state["prof_q"] = ""
+    st.session_state["prof_q_searchbox"] = ""
+    
+    # Limpiar cachés de búsqueda para evitar el error de índices
+    keys_to_delete = [
+        'prof_top_suggestions', 
+        'prof_q_searchboxoptions_ts', 
+        'prof_q_searchbox_ts',
+        'prof_q_searchbox_options'
+    ]
+    for key in keys_to_delete:
+        if key in st.session_state:
+            del st.session_state[key]
+
     st.rerun()
 
 
