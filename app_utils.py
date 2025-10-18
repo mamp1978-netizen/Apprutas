@@ -40,6 +40,20 @@ def _get_locationbias_param() -> str:
     # si no hay bias, usa ipbias (dejamos que Google centre por IP)
     return "ipbias"
 
+def _use_ip_bias() -> bool:
+    """Intenta usar la IP del usuario para establecer un sesgo de ubicación."""
+    try:
+        # Usa un servicio de geolocalización de IP
+        ip = requests.get("https://ipapi.co/json/", timeout=6).json()
+        lat, lng = ip.get("latitude"), ip.get("longitude")
+        if lat and lng:
+            # Usa set_location_bias que acabamos de definir
+            set_location_bias(float(lat), float(lng), 50000)  # ~50 km
+            return True
+    except Exception:
+        pass
+    return False
+
 # -----------------------------------
 # Proveedores de sugerencias
 # -----------------------------------
@@ -162,7 +176,6 @@ def get_place_coords_from_google(place_id: str):
 # -----------------------------------
 # Autocompletado unificado + resolución
 # -----------------------------------
-# LA FUNCIÓN CRÍTICA, CORREGIDA:
 def suggest_addresses(query: str, key_bucket: str, min_len: int = 1, *args, **kwargs):
     """Obtiene sugerencias de direcciones de múltiples proveedores.
     
