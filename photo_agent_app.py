@@ -1,8 +1,11 @@
+# Contenido FINAL y CORREGIDO de photo_agent_app.py
+
 import streamlit as st
 from i18n import get_texts
 import os
 
 # --- Clave API Google ---
+# Mantenemos esto igual
 GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
 
 if GOOGLE_PLACES_API_KEY:
@@ -21,9 +24,15 @@ def _safe_import(modname, funcname):
     except Exception as e:
         st.error(f"Error cargando `{modname}.{funcname}`")
         st.exception(e)
-        # Devuelve una función que no hace nada para evitar que el script se detenga,
-        # y que no requiere argumentos, resolviendo el TypeError.
-        return lambda: st.stop()
+        # Para evitar que el error detenga toda la app, devolvemos una función que:
+        # 1. Para 'profesional' no toma argumentos.
+        # 2. Para 'viajero' y 'turistico', toma un argumento (t) para evitar el TypeError.
+        # En caso de error, siempre detendrá la ejecución del script.
+        # La función de fallback debe coincidir con la firma esperada.
+        if funcname == "mostrar_profesional":
+             return lambda: st.stop()
+        else:
+             return lambda t: st.stop() # Retorna función que acepta 't'
 
 # Importación de las funciones de las pestañas
 mostrar_profesional = _safe_import("tab_profesional", "mostrar_profesional")
@@ -33,9 +42,8 @@ mostrar_turistico   = _safe_import("tab_turistico", "mostrar_turistico")
 st.set_page_config(page_title="Planificador de Rutas", page_icon="🗺️", layout="wide")
 st.set_option("client.showErrorDetails", True)
 
-# --- Detección de idioma (query param > session > default es) ---
+# ... (El código de detección de idioma y selector de idioma no se toca) ...
 def _get_query_lang():
-    # Streamlit >= 1.31: st.query_params
     try:
         qp = st.query_params
         if "lang" in qp:
@@ -45,7 +53,6 @@ def _get_query_lang():
             return val
     except Exception:
         pass
-    # Compatibilidad versiones anteriores
     try:
         qp = st.experimental_get_query_params()
         if "lang" in qp and qp["lang"]:
@@ -57,7 +64,6 @@ def _get_query_lang():
 if "lang" not in st.session_state:
     st.session_state["lang"] = _get_query_lang() or "es"
 
-# --- Selector de idioma en la sidebar ---
 langs_ui = {"es": ("es", "Español / Spanish"), "en": ("en", "Inglés / English")}
 current_lang = st.session_state["lang"]
 sel = st.sidebar.selectbox(
@@ -67,10 +73,8 @@ sel = st.sidebar.selectbox(
     index=0 if current_lang == "es" else 1
 )
 
-# Si el idioma cambia, lo persistimos en URL y rerun para refrescar toda la UI
 if sel != current_lang:
     st.session_state["lang"] = sel
-    # Persistir ?lang=<sel> en la URL
     try:
         st.experimental_set_query_params(lang=sel)
     except Exception:
@@ -79,6 +83,7 @@ if sel != current_lang:
 
 # Diccionario de textos activo
 t = get_texts(st.session_state["lang"])
+# ... (Fin del código de detección de idioma) ...
 
 # --- Encabezado ---
 st.markdown(f"# 🗺️ {t['app_title']}")
@@ -88,15 +93,17 @@ st.caption(t["app_subtitle"])
 tab_labels = t["tabs"]
 tabs = st.tabs(tab_labels)
 
-# CORRECCIÓN: Llamamos a las funciones SIN EL ARGUMENTO 't'
+# CORRECCIÓN DE LLAMADAS:
+# - Profesional: Se llama sin 't' (según la definición en tab_profesional.py que te di)
+# - Viajero/Turístico: Se llaman CON 't' (según la definición original de tu proyecto)
 with tabs[0]:
     mostrar_profesional() 
 
 with tabs[1]:
-    mostrar_viajero() # CORREGIDO: se llama sin 't'
+    mostrar_viajero(t) # Vuelve a pasar el argumento 't'
 
 with tabs[2]:
-    mostrar_turistico() # CORREGIDO: se llama sin 't'
+    mostrar_turistico(t) # Vuelve a pasar el argumento 't'
 
 st.divider()
 st.caption(t["footer_a"])
