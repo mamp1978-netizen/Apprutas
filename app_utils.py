@@ -69,8 +69,8 @@ def provider_google_autocomplete(query: str, max_results: int = 8):
             "input": query,
             "key": GOOGLE_PLACES_API_KEY,
             "language": "es",
-            # geocode prioriza calles, ciudades y lugares geográficos.
-            "types": "geocode",
+            # Descomenta la línea de 'types' para que Google sugiera cualquier cosa.
+            # "types": "address",
             # si quieres limitar país, descomenta -> "components": "country:es",
             "locationbias": _get_locationbias_param(),
             "sessiontoken": st.session_state["_g_session"],
