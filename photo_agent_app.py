@@ -1,8 +1,10 @@
-# photo_agent_app.py
 import streamlit as st
 from i18n import get_texts
 import os
 
+# --- Clave API Google ---
+# NOTA: En un entorno de producción como Streamlit Cloud, usar st.secrets es mejor.
+# Aquí mantenemos os.getenv para desarrollo local con .env
 GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
 
 if GOOGLE_PLACES_API_KEY:
@@ -21,8 +23,12 @@ def _safe_import(modname, funcname):
     except Exception as e:
         st.error(f"Error cargando `{modname}.{funcname}`")
         st.exception(e)
-        return lambda *_args, **_kw: st.stop()
+        # Devuelve una función que no hace nada para evitar que el script se detenga
+        # y para que reciba 0 argumentos (el error que vimos)
+        return lambda: st.stop() # <-- Retorna lambda sin argumentos
 
+# Importación de las funciones de las pestañas
+# Si hay error, devuelve la función que detiene el script sin argumentos.
 mostrar_profesional = _safe_import("tab_profesional", "mostrar_profesional")
 mostrar_viajero     = _safe_import("tab_viajero", "mostrar_viajero")
 mostrar_turistico   = _safe_import("tab_turistico", "mostrar_turistico")
@@ -85,14 +91,16 @@ st.caption(t["app_subtitle"])
 tab_labels = t["tabs"]
 tabs = st.tabs(tab_labels)
 
+# CORRECCIÓN: Llamamos a las funciones sin el argumento 't'
+# La función mostrar_profesional ya usa el estado de sesión para el idioma
 with tabs[0]:
-    mostrar_profesional(t)
+    mostrar_profesional() 
 
 with tabs[1]:
-    mostrar_viajero(t)
+    mostrar_viajero()
 
 with tabs[2]:
-    mostrar_turistico(t)
+    mostrar_turistico()
 
 st.divider()
 st.caption(t["footer_a"])
