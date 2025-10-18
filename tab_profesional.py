@@ -44,7 +44,6 @@ if "prof_avoid" not in st.session_state:
 
 def _force_rerun_with_clear():
     """Limpia la caché y fuerza el re-renderizado para solucionar errores de frontend (removeChild)."""
-    # Intentamos forzar la limpieza de cualquier memo/singleton
     try:
         st.experimental_memo.clear() 
     except:
