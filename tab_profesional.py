@@ -1,8 +1,11 @@
 import streamlit as st
 import requests
 from app_utils import (
-    suggest_addresses, resolve_selection, build_gmaps_url, make_qr,
-    ip_geo_bias
+    suggest_addresses,
+    resolve_selection,
+    build_gmaps_url,
+    make_qr,
+    ip_geo_bias   # <-- esta es la correcta, antes era set_location_bias
 )
 
 # =========================
