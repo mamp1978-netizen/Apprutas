@@ -3,64 +3,59 @@ import googlemaps
 import os
 from qrcode import make as make_qr_code 
 from io import BytesIO
-from urllib.parse import quote 
+from urllib.parse import quote
 
-# Carga la clave API de Google Maps desde los secretos de Streamlit
-# Asegúrate de tener GOOGLE_PLACES_API_KEY en tu archivo .streamlit/secrets.toml
-try:
-    GMAPS_API_KEY = st.secrets["GOOGLE_PLACES_API_KEY"]
-    gmaps = googlemaps.Client(key=GMAPS_API_KEY)
-except KeyError:
-    st.error("Error: La clave GOOGLE_PLACES_API_KEY no se encontró en 'secrets.toml'.")
-    gmaps = None
-except Exception:
-    gmaps = None
+# Inicialización del cliente de Google Maps
+# Asumimos que la clave está en secrets.toml o env vars
+API_KEY = os.environ.get("GOOGLE_PLACES_API_KEY") 
+gmaps = googlemaps.Client(key=API_KEY) if API_KEY else None
 
-# --- CONSTANTES ---
-LOC_BIAS_KEY = "_loc_bias"
+# Bucket de metadatos (para almacenar place_id/lat/lng asociados a las sugerencias)
+if "_metadata" not in st.session_state:
+    st.session_state["_metadata"] = {}
 
-# ----------------------------------------------------------------------
-# 1. FUNCIONES DE UBICACIÓN Y SESGO (GEOLOCALIZACIÓN POR IP)
-# ----------------------------------------------------------------------
+# -------------------------------
+# FUNCIONES DE GOOGLE MAPS/PLACES
+# -------------------------------
 
-def set_location_bias():
-    """Busca la ubicación aproximada del usuario por IP si está disponible en Streamlit Cloud."""
+@st.cache_data(show_spinner=False, ttl=3600)
+def suggest_addresses(address_term: str, key_bucket: str, min_len: int = 3) -> list:
+    """Busca sugerencias de direcciones usando la API de Places Autocomplete."""
+    if not gmaps or not address_term or len(address_term) < min_len:
+        return []
+
     try:
-        session = st.runtime.get_instance().get_script_run_ctx()
-        if session and hasattr(session, 'location'):
-            loc = session.location
-            if loc:
-                lat = loc.latitude
-                lng = loc.longitude
-                st.session_state[LOC_BIAS_KEY] = f"{lat},{lng}"
-                return
-    except Exception:
-        pass
+        # Usamos Place Autocomplete para obtener sugerencias
+        predictions = gmaps.places_autocomplete(
+            input_text=address_term,
+            language='es'
+        )
         
-    st.session_state[LOC_BIAS_KEY] = None
+        suggestions = []
+        resolved_meta = {}
+        
+        for p in predictions:
+            # Texto a mostrar en el SelectBox
+            description = p.get("description")
+            # El ID que usaremos para obtener detalles
+            place_id = p.get("place_id")
+            
+            if description and place_id:
+                suggestions.append(description)
+                # Almacenamos el place_id asociado a la descripción
+                resolved_meta[description] = {"place_id": place_id}
 
-
-def _use_ip_bias():
-    """Activa el sesgo de ubicación y lo almacena."""
-    if st.session_state.get(LOC_BIAS_KEY) is None:
-        with st.spinner("Buscando tu ubicación aproximada..."):
-            set_location_bias()
-            if st.session_state.get(LOC_BIAS_KEY):
-                st.info("Búsqueda sesgada a tu ubicación IP.")
-            else:
-                st.warning("No se pudo obtener la ubicación IP (¿usando VS Code o conexión bloqueada?).")
-
-# ----------------------------------------------------------------------
-# 2. FUNCIONES DE BÚSQUEDA Y RESOLUCIÓN (PLACES API)
-# ----------------------------------------------------------------------
-
-# --- EN app_utils.py ---
-
-# ... (código anterior) ...
+        # Almacenamos los metadatos en el estado de sesión bajo la clave específica
+        st.session_state["_metadata"][key_bucket] = resolved_meta
+        return suggestions
+        
+    except Exception as e:
+        # st.error(f"Error en la búsqueda de sugerencias: {e}") # Comentar para no saturar
+        return []
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def _gmaps_place_details(place_id: str) -> dict:
-    """Obtiene los detalles completos de un Place ID."""
+    """Obtiene los detalles completos de un Place ID (Dirección y Geometría)."""
     if not gmaps:
         return None
     try:
@@ -84,122 +79,90 @@ def _gmaps_place_details(place_id: str) -> dict:
             "lng": lng
         }
     except Exception as e:
-        # st.error(f"Error al obtener detalles del lugar: {e}") # Comentar para no saturar
-        return None # <--- CORRECCIÓN CRUCIAL: Devolver None en lugar de [].
-
-# ... (código posterior) ...
-
-
-def suggest_addresses(term: str, key_bucket: str, min_len: int = 3) -> list:
-    """Busca sugerencias y las almacena temporalmente para la resolución."""
-    if len(term) < min_len:
-        return []
-
-    location_bias = st.session_state.get(LOC_BIAS_KEY)
-    gmaps_results = _gmaps_autocomplete_request(term, location_bias)
-    
-    meta_key = f"{key_bucket}_meta"
-    
-    if meta_key not in st.session_state:
-        st.session_state[meta_key] = {}
+        # st.error(f"Error al obtener detalles del lugar: {e}") 
+        return None # <--- CORRECCIÓN CLAVE: Devuelve None para evitar el AttributeError
         
-    suggestions_labels = []
 
-    for res in gmaps_results:
-        label = res.get("description", res.get("place_id"))
-        place_id = res.get("place_id")
-        
-        st.session_state[meta_key][label] = {"place_id": place_id}
-        suggestions_labels.append(label)
-
-    return suggestions_labels
-
-
-def resolve_selection(selection: str, key_bucket: str) -> dict:
-    """Resuelve la metadata completa (incluyendo lat/lng)."""
-    meta_key = f"{key_bucket}_meta"
-    resolved_meta = st.session_state.get(meta_key, {}) 
+def resolve_selection(selection_text: str, key_bucket: str) -> dict:
+    """
+    Resuelve la selección de una dirección a sus metadatos (Place ID, dirección formateada).
+    Si la selección no tiene metadatos (es una dirección escrita directamente),
+    intenta obtener los detalles del Place ID.
+    """
     
-    temp_meta = resolved_meta.get(selection, {})
-    place_id = temp_meta.get("place_id")
+    resolved_meta = st.session_state.get("_metadata", {}).get(key_bucket, {})
 
+    # Intentamos obtener el Place ID del diccionario de metadatos guardado
+    place_meta = resolved_meta.get(selection_text, {})
+    place_id = place_meta.get("place_id")
+    
     if place_id:
-        if temp_meta.get("lat") and temp_meta.get("lng"):
-            return temp_meta
-            
+        # Si tenemos un Place ID, obtenemos los detalles completos
         details = _gmaps_place_details(place_id)
         if details:
-            st.session_state[meta_key][selection] = details
             return details
-    
-    # Fallback: Usar Geocoding para texto que no vino de la sugerencia
-    if not gmaps:
-        return {"address": selection, "lat": None, "lng": None}
         
-    try:
-        geocode_result = gmaps.geocode(selection, language='es')
-        if geocode_result:
-            first_result = geocode_result[0]
-            address = first_result.get('formatted_address', selection)
-            location = first_result.get('geometry', {}).get('location', {})
-            lat = location.get('lat')
-            lng = location.get('lng')
-            
-            final_details = {"address": address, "lat": lat, "lng": lng}
-            st.session_state[meta_key][selection] = final_details
-            
-            return final_details
-            
-        return {"address": selection, "lat": None, "lng": None}
-        
-    except Exception:
-        return {"address": selection, "lat": None, "lng": None}
+    # Si no se encuentra el Place ID o falla la obtención de detalles, 
+    # asumimos que el texto de entrada es una dirección válida (fallback)
+    return {"address": selection_text, "lat": None, "lng": None}
 
 
-# ----------------------------------------------------------------------
-# 3. FUNCIONES DE URL Y QR
-# ----------------------------------------------------------------------
+def set_location_bias(lat: float, lng: float):
+    """Establece el sesgo de ubicación para la búsqueda de direcciones."""
+    st.session_state["_loc_bias"] = {"lat": lat, "lng": lng}
+
+def _use_ip_bias():
+    """Simula la obtención de la IP para sesgar la búsqueda (solo un placeholder)."""
+    # En producción, usarías una API para geolocalizar la IP.
+    # Aquí establecemos un punto fijo (ejemplo: Madrid, España)
+    set_location_bias(40.4168, -3.7038)
+
+
+# -------------------------------
+# CONSTRUCCIÓN DE ENLACES Y QR
+# -------------------------------
 
 def build_gmaps_url(origin: str, destination: str, waypoints: list = None, mode: str = "driving", avoid: str = None, optimize: bool = True) -> str:
-    """Construye una URL de Google Maps para direcciones con múltiples paradas."""
+    """
+    Construye una URL de Google Maps de direcciones (daddr) 
+    con soporte para múltiples paradas (waypoints).
+    """
     
-    # URL de Directions API (el formato más simple para múltiples paradas)
+    # Usamos una URL de Directions
     base_url = "https://www.google.com/maps/dir/"
     
-    # Lista de todos los puntos
-    parts = []
-    
-    # 1. Origen
-    parts.append(origin)
-    
-    # 2. Paradas intermedias
+    # 1. Lista de todos los puntos a codificar
+    all_points = [origin]
     if waypoints:
-        parts.extend(waypoints)
-        
-    # 3. Destino
-    parts.append(destination)
+        all_points.extend(waypoints)
+    all_points.append(destination)
     
-    # Unimos todas las partes con el separador '/' de la URL de dir/
-    path = "/".join(parts)
+    # 2. Codificamos y unimos todas las direcciones usando quote()
+    # Esta es la parte crucial para asegurar que los espacios y caracteres especiales funcionen.
+    encoded_path = "/".join([quote(p) for p in all_points])
     
-    # Parámetros adicionales (se añaden después del path principal con un ? y &)
+    # 3. Parámetros adicionales (query string)
     params = []
 
+    # El modo de viaje se suele manejar en el propio /dir/ o en la URL
     if mode and mode != "driving":
         params.append(f"travelmode={mode}")
     
-    if avoid in ["tolls", "ferries", "highways"]:
+    # Optimizamos la ruta (Google lo hace por defecto con más de 25 paradas)
+    # Aquí podríamos forzarlo si fuera un parámetro de la URL de directions, 
+    # pero no es estándar para /dir/
+        
+    if avoid in ["tolls", "ferries"]:
         params.append(f"avoid={avoid}")
-    
+        
     query_string = f"?{'&'.join(params)}" if params else ""
     
-    return f"{base_url}{path}{query_string}"
+    # 4. La URL final debe ser: base_url + encoded_path + query_string
+    return f"{base_url}{encoded_path}{query_string}"
 
-    
 def make_qr(url: str) -> BytesIO:
-    """Genera un código QR a partir de una URL."""
-    img = make_qr_code(url)
+    """Genera un código QR para la URL dada."""
+    qr_img = make_qr_code(url)
     buffer = BytesIO()
-    img.save(buffer, format="PNG")
-    buffer.seek(0)
-    return buffer
+    qr_img.save(buffer, format="PNG")
+    return buffer.getvalue()

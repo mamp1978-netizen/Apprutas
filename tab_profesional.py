@@ -1,4 +1,3 @@
-# --- EN tab_profesional.py (Inicio) ---
 import streamlit as st
 from app_utils import (
     suggest_addresses,
@@ -15,72 +14,38 @@ from io import BytesIO
 # -------------------------------
 
 def initialize_session_state():
-    # ... (código completo de initialize_session_state) ...
+    """Asegura que todas las claves necesarias existan en st.session_state."""
     if "prof_points" not in st.session_state:
         st.session_state["prof_points"] = []
-    # ... (resto de las inicializaciones) ...
+        
+    if "prof_text_input" not in st.session_state:
+        st.session_state["prof_text_input"] = ""
+    if "prof_top_suggestions" not in st.session_state:
+        st.session_state["prof_top_suggestions"] = []
+    if "prof_selection" not in st.session_state:
+        st.session_state["prof_selection"] = ""
+        
+    if "prof_last_route_url" not in st.session_state:
+        st.session_state["prof_last_route_url"] = None
 
-# -------------------------------
-# FUNCIONES DE MANEJO DE ESTADO Y LÓGICA (LAS QUE ME ENVIASTE)
-# -------------------------------
+    if "prof_use_loc_cb" not in st.session_state: # Usamos la key del checkbox
+        st.session_state["prof_use_loc_cb"] = False
 
-def _force_rerun_with_clear():
-    # ... (código de _force_rerun_with_clear) ...
-    st.rerun()
-
-def _add_point_from_ui():
-    # ... (código de _add_point_from_ui) ...
-    
-def _clear_points():
-    # ... (código de _clear_points) ...
-
-def _run_search():
-    # ... (código de _run_search) ...
-
-def _search_box():
-    # ... (código de _search_box, con todas las keys únicas) ...
-
-# -------------------------------
-# Función principal de la pestaña (mostrar_profesional COMPLETA)
-# -------------------------------
-def mostrar_profesional():
-    
-    # 0. LLAMADA DE INICIALIZACIÓN
-    initialize_session_state() # <--- ¡Asegúrate de que esta línea esté aquí!
-
-    st.header("Ruta de trabajo")
-    
-    # 1. Opciones de ruta (Tipo y Evitar)
-    col_mode, col_avoid = st.columns([1, 1])
-    with col_mode:
-        st.selectbox("Tipo de ruta", ["Más rápido", "Más corto"], key="prof_mode", label_visibility="visible")
-    with col_avoid:
-        st.selectbox("Evitar", ["Ninguno", "Peajes", "Ferries"], key="prof_avoid", label_visibility="visible")
+    if "_loc_bias" not in st.session_state:
+        st.session_state["_loc_bias"] = None
+        
+    if "prof_mode" not in st.session_state:
+        st.session_state["prof_mode"] = "Más rápido"
+    if "prof_avoid" not in st.session_state:
+        st.session_state["prof_avoid"] = "Ninguno"
 
 
-    # 2. Barra de búsqueda
-    _search_box()
-
-    # 3. Lista de puntos (Origen, Destino, Paradas)
-    pts = st.session_state["prof_points"] 
-    
-    st.subheader("Puntos de la ruta (orden de viaje)")
-    
-    # ... (TODO EL RESTO DEL CÓDIGO DE LÓGICA DE LISTA, BOTÓN GENERAR RUTA Y QR) ...
-    # Asegúrate de que el 'return' dentro del if len(pts) < 2: esté bien indentado.
-    
-    if st.button("Generar ruta profesional", type="primary", key="prof_generate_btn"):
-        if len(pts) < 2:
-            st.warning("Deben haber dos o más puntos (origen y destino).")
-            return # <--- 2 niveles de indentación
-        # ... (resto de la lógica de generación) ...    
 # -------------------------------
 # FUNCIONES DE MANEJO DE ESTADO Y LÓGICA
 # -------------------------------
 
 def _force_rerun_with_clear():
-    """Limpia la caché y fuerza el re-renderizado para solucionar errores de frontend."""
-    # st.experimental_memo.clear() ya no se usa, simplemente forzamos el re-run
+    """Fuerza el re-renderizado para solucionar errores de frontend."""
     st.rerun()
 
 
@@ -88,6 +53,7 @@ def _add_point_from_ui():
     """Añade la dirección seleccionada/escrita a la lista y limpia la barra."""
     
     # 1. DETERMINAR EL VALOR A AÑADIR
+    value = ""
     if st.session_state.get("prof_top_suggestions"):
         value = st.session_state.get("prof_selection")
     else:
@@ -130,6 +96,7 @@ def _run_search():
     
     # Si la longitud es suficiente, buscamos
     if len(term) >= 3:
+        # Pasamos la clave 'prof_top' al suggest_addresses para guardar el Place ID
         suggestions = suggest_addresses(term, key_bucket="prof_top", min_len=3) 
         st.session_state["prof_top_suggestions"] = suggestions
         
@@ -210,6 +177,10 @@ def _search_box():
 # Función principal de la pestaña
 # -------------------------------
 def mostrar_profesional():
+    
+    # 0. LLAMADA DE INICIALIZACIÓN
+    initialize_session_state() 
+
     st.header("Ruta de trabajo")
     
     # 1. Opciones de ruta (Tipo y Evitar)
@@ -270,7 +241,7 @@ def mostrar_profesional():
     if st.button("Generar ruta profesional", type="primary", key="prof_generate_btn"):
         if len(pts) < 2:
             st.warning("Deben haber dos o más puntos (origen y destino).")
-            return # <--- Asegúrate de que este 'return' tenga la indentación correcta (2 niveles)
+            return 
         
         # --- 4.1 Resolución de Puntos ---
         origen_label = pts[0]
@@ -278,6 +249,7 @@ def mostrar_profesional():
         waypoints_labels = pts[1:-1]
         
         # Resolvemos el origen y destino
+        # La clave 'prof_top' asegura que usemos los metadatos guardados por _run_search
         origen_meta = resolve_selection(origen_label, "prof_top")
         destino_meta = resolve_selection(destino_label, "prof_top")
         
