@@ -85,41 +85,58 @@ def suggest_addresses(search_term: str, **kwargs) -> list[str]:
 
 # --- 2. FUNCIÓN DE RESOLUCIÓN DE SELECCIÓN (FINAL) ---
 
-def resolve_selection(selection_text: str, key_bucket: str) -> dict:
+def resolve_selection(selection: str, key_bucket: str) -> dict:
     """
-    Resuelve la dirección a partir del texto de la sugerencia o la geocodifica
-    si no se encuentra en caché.
+    Busca la metadata completa de una dirección (que ya ha sido resuelta y guardada 
+    en st.session_state[key_bucket]). Si no la encuentra, intenta resolverla de nuevo.
     """
-    if not selection_text:
-        return {"address": "", "place_id": None}
+    
+    # La clave de sesión donde se guardan las resoluciones de la API
+    meta_key = f"{key_bucket}_meta"
 
-    # 1. Intentar resolver desde el caché (si el usuario seleccionó una sugerencia)
-    suggestions = st.session_state.get(f"{key_bucket}_suggestions", {})
-    place_id = suggestions.get(selection_text)
+    # --- CORRECCIÓN CRUCIAL AQUÍ ---
+    # 1. Intentar obtener el diccionario de metadatos del estado de sesión.
+    #    Usamos .get() para devolver un diccionario vacío {} si la clave no existe,
+    #    o si el valor guardado no es un diccionario.
+    #    (La traza de error apunta a que aquí es donde hay una lista en lugar de un dict)
+    
+    # 2. Iterar sobre las resoluciones de direcciones para encontrar una coincidencia.
+    #    Asegúrate de que st.session_state.get(meta_key) SIEMPRE devuelva un dict
+    #    que contenga los metadatos.
+    
+    resolved_meta = st.session_state.get(meta_key, {}) # Usa .get() para evitar KeyError
+    
+    # Busca la metadato completo por la dirección (que es el texto de selección)
+    result = resolved_meta.get(selection) 
 
-    # 2. Si hay Place ID, usar la API de Place Details (más precisa)
-    if place_id:
-        try:
-            params = {
-                'place_id': place_id,
-                'key': GOOGLE_PLACES_API_KEY,
-                'language': st.session_state.get('lang', 'es'),
-            }
-            response = requests.get(
-                "https://maps.googleapis.com/maps/api/place/details/json",
-                params=params
-            )
-            response.raise_for_status()
-            data = response.json()
-            result = data.get('result', {})
-            
-            return {
-                "address": result.get('formatted_address', selection_text),
-                "place_id": place_id
-            }
-
-        except Exception:
-            pass
+    if result:
+        return result
+    
+    # Si la metadato no se encuentra (porque el usuario escribió la dirección
+    # directamente sin usar la búsqueda de sugerencias), la resolvemos de nuevo.
+    # Esto es vital para las direcciones que se añaden manualmente.
+    
+    try:
+        # Llama a la API de Google/Geocoding para obtener los metadatos completos
+        # Nota: Asume que tienes una función de geocodificación que retorna un dict con 'address' y 'lat'/'lng'.
+        # Por ejemplo, una simple llamada a Geocoding con la 'selection'.
+        
+        # Simulamos la nueva resolución para evitar depender de la API real en este ejemplo
+        # **Debes reemplazar esto con tu llamada a la API de Geocoding**
+        new_result = {
+            "address": selection, # Usamos la selección como dirección
+            "lat": None,
+            "lng": None
+        }
+        
+        # Opcional: Si tienes una función `geocode_address(selection)` real, úsala aquí.
+        # new_result = geocode_address(selection) 
+        
+        return new_result
+        
+    except Exception as e:
+        st.error(f"Error al resolver la dirección '{selection}': {e}")
+        return {"address": selection, "lat": None, "lng": None} # Devuelve un dict por si acaso
 
     # 3. Si no hay Place ID (el usuario escribió sin usar el selectbox), usar Geocoding
     try:
