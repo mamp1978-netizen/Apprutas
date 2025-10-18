@@ -10,7 +10,7 @@ from app_utils import (
     make_qr,
     set_location_bias,
     _get_key,
-    _use_ip_bias # Ya añadida a app_utils.py en el paso anterior
+    _use_ip_bias
 )
 
 # -------------------------------
@@ -27,7 +27,6 @@ def _init_state():
 # Añadir punto según lo visible
 # -------------------------------
 def _add_point_from_ui():
-    # El valor seleccionado (o escrito) por el usuario está en st.session_state["prof_q"]
     value = (st.session_state.get("prof_q") or "").strip()
 
     if not value or value.lower() in ["", "buscar dirección… (presione enter para agregar)"]:
@@ -37,7 +36,6 @@ def _add_point_from_ui():
     st.session_state["prof_points"].append(value)
     st.success(f"Añadido: {value}")
     
-    # Limpiar la barra de búsqueda después de añadir
     st.session_state["prof_q"] = ""
     st.rerun()
 
@@ -45,22 +43,22 @@ def _add_point_from_ui():
 # Buscador con comportamiento Google-like
 # -------------------------------
 def _search_box():
-    # USAMOS st_searchbox
+    # El valor por defecto (default_value) se pasa a suggest_addresses como argumento
+    # posicional extra, por lo que usamos func_kwargs para los argumentos clave.
     selected_value = st_searchbox(
         search_function=suggest_addresses,
         label="Buscar dirección… (presione ENTER para agregar)",
         placeholder="Calle, número, ciudad… / Street, number, city…",
         key="prof_q_searchbox",
         default_value=st.session_state.get("prof_q", ""),
-        # Parámetros para tu función suggest_addresses
-        # CRUCIAL: Añadimos 'key_bucket' aquí para que se pase como **kwargs a suggest_addresses
+        # CRUCIAL: 'key_bucket' y 'min_len' deben pasarse como keyword arguments
+        # para que suggest_addresses los extraiga de **kwargs.
         func_kwargs={
-            "key_bucket": "prof_top", # <--- ESTE ES EL CAMBIO CLAVE
+            "key_bucket": "prof_top", # <--- Verificación
             "min_len": 1
         }
     )
     
-    # El valor seleccionado/escrito se guarda en el estado para el botón "Añadir".
     st.session_state["prof_q"] = selected_value
 
     # --- Botones ---
@@ -126,9 +124,12 @@ def mostrar_profesional(t: dict):
         if len(pts) < 2:
             st.warning("Debes tener origen y destino.")
             return
-        o = resolve_selection(pts[0], "prof_point_0")
-        d = resolve_selection(pts[-1], f"prof_point_{len(pts)-1}")
-        wp = [resolve_selection(p, f"prof_point_{i}")["address"] for i, p in enumerate(pts[1:-1], 1)]
+        # Usamos prof_top para la resolución de origen/destino si no se usa el punto.
+        o = resolve_selection(pts[0], "prof_top") 
+        d = resolve_selection(pts[-1], "prof_top")
+        
+        # El bucket para waypoints no necesita ser prof_point_X, puede ser prof_top o uno genérico.
+        wp = [resolve_selection(p, "prof_top")["address"] for i, p in enumerate(pts[1:-1], 1)]
 
         avoid_list = []
         if st.session_state.prof_route_type == "Evitar autopistas":
