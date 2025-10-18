@@ -15,7 +15,6 @@ from io import BytesIO
 
 # -------------------------------
 # INICIALIZACIÓN DEL ESTADO DE SESIÓN (CRUCIAL para evitar KeyErrors)
-# Las variables se inicializan si no existen.
 # -------------------------------
 if "prof_points" not in st.session_state:
     st.session_state["prof_points"] = []
@@ -84,14 +83,22 @@ def _add_point_from_ui():
     st.session_state["prof_points"].append(value)
     st.success(f"Añadido: {value}")
     
-    # Limpiar el estado y forzar recarga
+    # Limpiar el estado del widget y del cache de opciones del searchbox (CORRECCIÓN)
     st.session_state["prof_q"] = ""
-    st.session_state["prof_q_searchbox"] = "" 
+    st.session_state["prof_q_searchbox"] = ""
+    # Soluciona: TypeError: list indices must be integers, not str
+    if 'prof_q_searchboxoptions_ts' in st.session_state:
+        del st.session_state['prof_q_searchboxoptions_ts'] 
+        
     st.rerun()
 
 def _clear_points():
     st.session_state["prof_points"] = []
     st.session_state["prof_last_route_url"] = None
+    if 'prof_q_searchboxoptions_ts' in st.session_state:
+        del st.session_state['prof_q_searchboxoptions_ts']
+    st.rerun()
+
 
 # -------------------------------
 # Función principal de la pestaña
@@ -102,7 +109,6 @@ def mostrar_profesional():
     # 1. Opciones de ruta (Tipo y Evitar)
     col_mode, col_avoid = st.columns([1, 1])
     with col_mode:
-        # Nota: El selectbox ahora se inicializa dentro del contenedor de columnas.
         st.selectbox("Tipo de ruta", ["Más rápido", "Más corto"], key="prof_mode", label_visibility="collapsed")
     with col_avoid:
         st.selectbox("Evitar", ["Ninguno", "Peajes", "Ferries"], key="prof_avoid", label_visibility="collapsed")
@@ -112,7 +118,6 @@ def mostrar_profesional():
     _search_box()
 
     # 3. Lista de puntos (Origen, Destino, Paradas)
-    # Se accede al estado de sesión que YA HA SIDO INICIALIZADO arriba
     pts = st.session_state["prof_points"] 
     
     st.subheader("Puntos de la ruta (orden de viaje)")
