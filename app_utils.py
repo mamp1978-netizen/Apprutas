@@ -6,6 +6,7 @@ import os, uuid, requests
 import streamlit as st
 import qrcode
 from dotenv import load_dotenv
+load_dotenv()
 
 # (… el resto de tu app_utils.py arriba/abajo debe quedarse igual …)
 
