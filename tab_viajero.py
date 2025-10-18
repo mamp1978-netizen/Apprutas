@@ -1,17 +1,18 @@
+# tab_viajero.py
 import streamlit as st
 from app_utils import resolve_selection, build_gmaps_url, make_qr
 
-def mostrar_viajero():
-    st.subheader("Plan rápido (viajero)")
-    st.caption("Indica inicio y final. (Puedes añadir una parada opcional).")
+def mostrar_viajero(t: dict):
+    st.subheader(t["trav_header"])
+    st.caption(t["trav_caption"])
 
-    o = st.text_input("Origen", key="trav_origin")
-    d = st.text_input("Destino", key="trav_dest")
-    p = st.text_input("Parada intermedia (opcional)", key="trav_mid")
+    o = st.text_input(t["input_origin"], key="trav_origin")
+    d = st.text_input(t["input_dest"], key="trav_dest")
+    p = st.text_input(t["input_mid"], key="trav_mid")
 
-    if st.button("Crear ruta (viajero)"):
+    if st.button(t["generate_trav"]):
         if not o or not d:
-            st.error("Falta origen o destino.")
+            st.error(t["missing_o_d"])
             return
         o_res = resolve_selection(o, "trav_origin")
         d_res = resolve_selection(d, "trav_dest")
@@ -19,6 +20,6 @@ def mostrar_viajero():
         if p:
             wps.append(resolve_selection(p, "trav_mid")["address"])
         url = build_gmaps_url(o_res["address"], d_res["address"], wps if wps else None)
-        st.success("Ruta generada")
+        st.success(t["route_ready"])
         st.write(url)
-        st.image(make_qr(url), caption="QR de la ruta")
+        st.image(make_qr(url), caption=t["qr_route"])
