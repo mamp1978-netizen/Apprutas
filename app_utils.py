@@ -69,8 +69,8 @@ def provider_google_autocomplete(query: str, max_results: int = 8):
             "input": query,
             "key": GOOGLE_PLACES_API_KEY,
             "language": "es",
-            # Descomenta la línea de 'types' para que Google sugiera cualquier cosa.
-            # "types": "address",
+            # CAMBIO: Usamos 'geocode' para una búsqueda más flexible (no requiere número de portal al inicio)
+            "types": "geocode", 
             # si quieres limitar país, descomenta -> "components": "country:es",
             "locationbias": _get_locationbias_param(),
             "sessiontoken": st.session_state["_g_session"],
@@ -182,11 +182,9 @@ def suggest_addresses(query: str, *args, **kwargs):
     """Obtiene sugerencias de direcciones de múltiples proveedores."""
     
     # Extraemos los argumentos necesarios de **kwargs 
-    key_bucket = kwargs.get("key_bucket", "general") # Usamos 'general' como fallback
+    key_bucket = kwargs.get("key_bucket", "general") # Usamos 'general' como fallback si no se pasa
     min_len = kwargs.get("min_len", 1) 
     
-    # Eliminamos el check de error que da el mensaje: ya no necesitamos el mensaje de error.
-
     q = (query or "").strip()
     
     if len(q) < min_len:
@@ -197,7 +195,7 @@ def suggest_addresses(query: str, *args, **kwargs):
               or provider_serpapi_maps(q) \
               or provider_nominatim(q) \
               or []
-    # ... (el resto del código sigue igual) ...
+
     # sanea
     clean = []
     for item in results:
@@ -247,7 +245,7 @@ def resolve_selection(label: str, key_bucket: str):
 # -----------------------------------
 # Google Maps URL + QR
 # -----------------------------------
-# CORRECCIÓN: El asterisco (*) para keyword-only arguments NO lleva dos puntos (:)
+# CORRECCIÓN DE SINTAXIS APLICADA
 def build_gmaps_url(origin: str, destination: str, waypoints=None, *, mode="driving", avoid=None, optimize=True):
     base = "https://www.google.com/maps/dir/?api=1"
     parts = [
@@ -258,34 +256,12 @@ def build_gmaps_url(origin: str, destination: str, waypoints=None, *, mode="driv
     if avoid:
         parts.append(f"avoid={quote_plus(','.join(avoid))}")
     if waypoints:
-        wp = "|".join([quote_plus(w) for w in waypoints if w]) # Aseguramos que los waypoints se codifican correctamente
-        if optimize and len(waypoints) > 1:
-            wp = f"optimize:true|{wp}"
-        parts.append(f"waypoints={wp}")
-    return base + "&" + "&".join(parts)
-# --- Al final de app_utils.py ---
-
-# -----------------------------------
-# Google Maps URL + QR
-# -----------------------------------
-def build_gmaps_url(origin: str, destination: str, waypoints=None, *, mode="driving", avoid=None, optimize=True):
-    # ... (código que ya corregiste) ...
-    base = "https://www.google.com/maps/dir/?api=1"
-    parts = [
-        f"origin={quote_plus(origin)}",
-        f"destination={quote_plus(destination)}",
-        f"travelmode={mode}"
-    ]
-    if avoid:
-        parts.append(f"avoid={quote_plus(','.join(avoid))}")
-    if waypoints:
-        wp = "|".join([quote_plus(w) for w in waypoints if w])
+        wp = "|".join([quote_plus(w) for w in waypoints if w]) 
         if optimize and len(waypoints) > 1:
             wp = f"optimize:true|{wp}"
         parts.append(f"waypoints={wp}")
     return base + "&" + "&".join(parts)
 
-# ¡ESTA FUNCIÓN DEBE EXISTIR!
 def make_qr(url: str) -> BytesIO:
     qr = qrcode.QRCode(border=1, box_size=6)
     qr.add_data(url)
