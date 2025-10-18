@@ -1,3 +1,5 @@
+# --- EN app_utils.py, sustituye la función suggest_addresses ---
+
 def suggest_addresses(query: str, *args, **kwargs):
     """Obtiene sugerencias de direcciones de múltiples proveedores."""
     
@@ -7,6 +9,8 @@ def suggest_addresses(query: str, *args, **kwargs):
     min_len = kwargs.get("min_len", 1) 
     
     if not key_bucket:
+        # Si aún recibes este mensaje, significa que func_kwargs NO está funcionando
+        # o la aplicación no ha cargado la nueva firma.
         return ["Error interno: Falta key_bucket en la función de búsqueda."]
 
     q = (query or "").strip()
@@ -14,6 +18,8 @@ def suggest_addresses(query: str, *args, **kwargs):
     if len(q) < min_len:
         return []
 
+    # ... (el resto de la lógica de búsqueda, que está correcta) ...
+    
     # Google primero. Si no responde, caemos a SerpAPI y luego OSM.
     results = provider_google_autocomplete(q) \
               or provider_serpapi_maps(q) \
