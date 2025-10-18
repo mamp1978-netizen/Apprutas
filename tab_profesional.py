@@ -1,6 +1,8 @@
+# Contenido Completo de /workspaces/Apprutas/tab_profesional.py
+
 import requests
 import streamlit as st
-from streamlit_searchbox import st_searchbox # <--- Importación necesaria
+from streamlit_searchbox import st_searchbox 
 from app_utils import (
     suggest_addresses,
     resolve_selection,
@@ -8,8 +10,7 @@ from app_utils import (
     make_qr,
     set_location_bias,
     _get_key,
-    # Asegúrate de que todas tus funciones estén importadas
-    _use_ip_bias # Asumo que esta función también está en app_utils o la defines aquí
+    _use_ip_bias # Ya añadida a app_utils.py en el paso anterior
 )
 
 # -------------------------------
@@ -20,28 +21,8 @@ def _init_state():
     ss.setdefault("prof_points", [])
     ss.setdefault("prof_last_route_url", None)
     ss.setdefault("prof_route_type", "Más rápido")
-    # Mantenemos prof_q para el valor de la barra, que ahora es gestionado por searchbox
     ss.setdefault("prof_q", "") 
 
-# -------------------------------
-# IP -> lat/lng (sesgo ubicación)
-# -------------------------------
-# Asumo que _use_ip_bias está en app_utils.py, si no, lo debes definir aquí o importarlo
-try:
-    # Intenta importar la función desde app_utils si no estaba antes
-    from app_utils import _use_ip_bias
-except ImportError:
-    # Si no existe, usamos la implementación local del código que mostraste
-    def _use_ip_bias() -> bool:
-        try:
-            ip = requests.get("https://ipapi.co/json/", timeout=6).json()
-            lat, lng = ip.get("latitude"), ip.get("longitude")
-            if lat and lng:
-                set_location_bias(float(lat), float(lng), 50000)  # ~50 km
-                return True
-        except Exception:
-            pass
-        return False
 # -------------------------------
 # Añadir punto según lo visible
 # -------------------------------
@@ -64,7 +45,7 @@ def _add_point_from_ui():
 # Buscador con comportamiento Google-like
 # -------------------------------
 def _search_box():
-    # USAMOS st_searchbox: la función suggest_addresses ahora acepta *args y **kwargs
+    # USAMOS st_searchbox
     selected_value = st_searchbox(
         search_function=suggest_addresses,
         label="Buscar dirección… (presione ENTER para agregar)",
@@ -72,8 +53,9 @@ def _search_box():
         key="prof_q_searchbox",
         default_value=st.session_state.get("prof_q", ""),
         # Parámetros para tu función suggest_addresses
+        # CRUCIAL: Añadimos 'key_bucket' aquí para que se pase como **kwargs a suggest_addresses
         func_kwargs={
-            "tag": "prof_top",
+            "key_bucket": "prof_top", # <--- ESTE ES EL CAMBIO CLAVE
             "min_len": 1
         }
     )
@@ -148,7 +130,13 @@ def mostrar_profesional(t: dict):
         d = resolve_selection(pts[-1], f"prof_point_{len(pts)-1}")
         wp = [resolve_selection(p, f"prof_point_{i}")["address"] for i, p in enumerate(pts[1:-1], 1)]
 
-        url = build_gmaps_url(o["address"], d["address"], wp)
+        avoid_list = []
+        if st.session_state.prof_route_type == "Evitar autopistas":
+            avoid_list.append("highways")
+        if st.session_state.prof_route_type == "Evitar peajes":
+            avoid_list.append("tolls")
+            
+        url = build_gmaps_url(o["address"], d["address"], wp, avoid=avoid_list)
         st.session_state.prof_last_route_url = url
         st.success("Ruta generada correctamente ✅")
         st.write(url)
