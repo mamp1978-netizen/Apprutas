@@ -112,26 +112,27 @@ def _run_search():
 # Componente de búsqueda y lógica de ubicación
 # -------------------------------
 
+# --- EN tab_profesional.py ---
+
+# ... (otras funciones y código) ...
+
+# -------------------------------
+# Componente de búsqueda y lógica de ubicación
+# -------------------------------
 def _search_box():
     st.markdown("---")
     
     # 1. ENTRADA DE TEXTO
-    col_input, col_search = st.columns([4, 1])
+    # Se utiliza el callback on_change para ejecutar la búsqueda al presionar ENTER
+    st.text_input(
+        "Buscar dirección...",
+        key="prof_text_input",
+        label_visibility="collapsed",
+        placeholder="Escribe la dirección (mín. 3 letras) y pulsa ENTER",
+        on_change=_run_search # <- Llama a la función de búsqueda cuando se presiona ENTER
+    )
     
-    with col_input:
-        st.text_input(
-            "Buscar dirección...",
-            key="prof_text_input",
-            label_visibility="collapsed",
-            placeholder="Escribe la dirección (mín. 3 letras) y pulsa 'Buscar'"
-        )
-    
-    # 2. BOTÓN DE BÚSQUEDA MANUAL
-    with col_search:
-        st.button("🔎 Buscar", on_click=_run_search, use_container_width=True)
-
-
-    # 3. SELECTBOX CON SUGERENCIAS
+    # 2. SELECTBOX CON SUGERENCIAS
     suggestions = st.session_state.get("prof_top_suggestions", [])
     
     if suggestions:
@@ -141,6 +142,37 @@ def _search_box():
             key="prof_selection",
             label_visibility="visible"
         )
+    
+    # 3. Botones de acción y ubicación
+    # Reducimos las columnas de 3 a 2, ya que eliminamos el botón de búsqueda
+    col_add, col_clear, col_loc = st.columns([1.5, 1, 3])
+
+    with col_add:
+        st.button("Añadir", on_click=_add_point_from_ui, type="primary")
+
+    with col_clear:
+        st.button("Limpiar", on_click=_clear_points)
+
+    # Lógica de ubicación
+    with col_loc:
+        is_loc_active = st.checkbox(
+            "Usar mi ubicación", 
+            key="prof_use_loc", 
+            value=st.session_state.get("_loc_bias") is not None,
+            help="Si está activado, la búsqueda se sesga a tu ubicación IP."
+        )
+        
+        # Lógica para activar/desactivar el sesgo de ubicación
+        if is_loc_active:
+             if st.session_state.get("_loc_bias") is None:
+                 _use_ip_bias()
+                 _force_rerun_with_clear()
+        else:
+             if st.session_state.get("_loc_bias") is not None:
+                 del st.session_state["_loc_bias"]
+                 _force_rerun_with_clear()
+                 
+    st.markdown("---")
     
     # 4. Botones de acción y ubicación
     col_add, col_clear, col_loc = st.columns([1.5, 1, 3])
