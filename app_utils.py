@@ -54,32 +54,9 @@ def _use_ip_bias():
 # 2. FUNCIONES DE BÚSQUEDA Y RESOLUCIÓN (PLACES API)
 # ----------------------------------------------------------------------
 
-@st.cache_data(show_spinner=False, ttl=3600)
-def _gmaps_autocomplete_request(search_term: str, location_bias: str = None) -> list:
-    """Realiza la llamada a la API de Autocompletado de Places."""
-    if not gmaps:
-        return []
+# --- EN app_utils.py ---
 
-    search_options = {
-        "input": search_term,
-        "language": "es",
-        "types": "(address)",
-    }
-    
-    if location_bias:
-        try:
-            lat, lng = map(float, location_bias.split(','))
-            search_options["location"] = (lat, lng)
-            search_options["radius"] = 200000 
-        except:
-            pass 
-    
-    try:
-        results = gmaps.places_autocomplete(**search_options)
-        return results
-    except Exception as e:
-        st.error(f"Error en la API de Autocompletado: {e}")
-        return []
+# ... (código anterior) ...
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def _gmaps_place_details(place_id: str) -> dict:
@@ -107,8 +84,10 @@ def _gmaps_place_details(place_id: str) -> dict:
             "lng": lng
         }
     except Exception as e:
-        st.error(f"Error al obtener detalles del lugar: {e}")
-        return None
+        # st.error(f"Error al obtener detalles del lugar: {e}") # Comentar para no saturar
+        return None # <--- CORRECCIÓN CRUCIAL: Devolver None en lugar de [].
+
+# ... (código posterior) ...
 
 
 def suggest_addresses(term: str, key_bucket: str, min_len: int = 3) -> list:
