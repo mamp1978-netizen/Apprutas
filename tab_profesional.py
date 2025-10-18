@@ -176,17 +176,36 @@ def _search_box():
 def mostrar_profesional():
     st.header("Ruta de trabajo")
     
-    # 1. Opciones de ruta (Tipo y Evitar)
-    col_mode, col_avoid = st.columns([1, 1])
-    with col_mode:
-        st.selectbox("Tipo de ruta", ["Más rápido", "Más corto"], key="prof_mode", label_visibility="visible")
-    with col_avoid:
-        st.selectbox("Evitar", ["Ninguno", "Peajes", "Ferries"], key="prof_avoid", label_visibility="visible")
+# En tab_profesional.py, dentro de la función mostrar_profesional(), 
+# en el bucle 'for i, p in enumerate(pts):'
 
+# 1. Función para forzar el re-dibujado
+def _force_rerun_with_clear():
+    # El clear_memo_cache es el equivalente a forzar una limpieza del frontend
+    st.experimental_memo.clear() 
+    # El rerun forzado debe ser lo último
+    st.rerun()
 
-    # 2. Barra de búsqueda (la nueva lógica)
-    _search_box()
+# 2. Modificación de los botones
 
+# --- Botones de Movimiento (col1 y col2) ---
+with col1:
+    if i > 0: 
+        if st.button("⬆️", key=f"up_{i}", help="Mover arriba", use_container_width=True):
+            pts.insert(i-1, pts.pop(i))
+            _force_rerun_with_clear() # <-- Llamamos a la nueva función aquí
+with col2:
+    if i < len(pts) - 1: 
+        if st.button("⬇️", key=f"down_{i}", help="Mover abajo", use_container_width=True):
+            pts.insert(i+1, pts.pop(i))
+            _force_rerun_with_clear() # <-- Llamamos a la nueva función aquí
+
+# --- Botón Eliminar (col5) ---
+with col5:
+    if st.button("🗑️", key=f"del_{i}", help="Eliminar punto", use_container_width=True):
+        pts.pop(i)
+        _force_rerun_with_clear() # <-- Llamamos a la nueva función aquí
+        
     # 3. Lista de puntos (Origen, Destino, Paradas)
     pts = st.session_state["prof_points"] 
     
@@ -283,8 +302,8 @@ def mostrar_profesional():
             col_qr, col_info = st.columns([1, 3])
             
             with col_qr:
-                st.image(qr_bytes, caption="Escanea para abrir la ruta", use_column_width=True)
-            
+                st.image(qr_bytes, caption="Escanea para abrir la ruta", use_container_width=True)
+                        
             with col_info:
                 st.info("Escanee el código QR con su teléfono para abrir la ruta en la aplicación de Google Maps de forma inmediata.")
 
