@@ -1,104 +1,43 @@
 import streamlit as st
-# Asumo que tienes un archivo i18n.py o similar
-from i18n import get_texts 
-import os
+import warnings
 
-# --- CLAVE API GOOGLE ---
-# Mantenemos esto para verificar la clave al inicio
-GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
+# Importa las funciones de cada pestaña.
+# Nota: La aplicación fallará si no existen tab_viajero.py y tab_turistico.py
+from tab_profesional import mostrar_profesional
+# Importa las funciones (comenta si no existen aún)
+# from tab_viajero import mostrar_viajero
+# from tab_turistico import mostrar_turistico
 
-if GOOGLE_PLACES_API_KEY:
-    st.sidebar.caption(
-        "🔑 Google key OK (últimos 6): **" +
-        str(GOOGLE_PLACES_API_KEY)[-6:] + "**"
-    )
-else:
-    st.sidebar.error("❌ Falta GOOGLE_PLACES_API_KEY")
-
-# --- Import diferido para aislar errores de pestañas ---
-def _safe_import(modname, funcname):
-    try:
-        mod = __import__(modname, fromlist=[funcname])
-        return getattr(mod, funcname)
-    except Exception as e:
-        st.error(f"Error cargando `{modname}.{funcname}`")
-        st.exception(e)
-        # La función de fallback debe coincidir con la firma esperada.
-        if funcname == "mostrar_profesional":
-             return lambda: st.stop()
-        else:
-             return lambda t: st.stop() 
-
-# Importación de las funciones de las pestañas
-mostrar_profesional = _safe_import("tab_profesional", "mostrar_profesional")
-mostrar_viajero     = _safe_import("tab_viajero", "mostrar_viajero")
-mostrar_turistico   = _safe_import("tab_turistico", "mostrar_turistico")
-
-st.set_page_config(page_title="Planificador de Rutas", page_icon="🗺️", layout="wide")
-st.set_option("client.showErrorDetails", True)
-
-# --- Detección y selector de idioma (se mantiene igual) ---
-def _get_query_lang():
-    try:
-        qp = st.query_params
-        if "lang" in qp:
-            val = qp.get("lang")
-            if isinstance(val, (list, tuple)):
-                return val[0]
-            return val
-    except Exception:
-        pass
-    try:
-        qp = st.experimental_get_query_params()
-        if "lang" in qp and qp["lang"]:
-            return qp["lang"][0]
-    except Exception:
-        pass
-    return None
-
-if "lang" not in st.session_state:
-    st.session_state["lang"] = _get_query_lang() or "es"
-
-langs_ui = {"es": ("es", "Español / Spanish"), "en": ("en", "Inglés / English")}
-current_lang = st.session_state["lang"]
-sel = st.sidebar.selectbox(
-    label=get_texts(current_lang)["lang_label"],
-    options=list(langs_ui.keys()),
-    format_func=lambda k: langs_ui[k][1],
-    index=0 if current_lang == "es" else 1
+# --- CONFIGURACIÓN DE PÁGINA ---
+st.set_page_config(
+    page_title="Planificador de Rutas",
+    page_icon="🗺️",
+    layout="wide"
 )
 
-if sel != current_lang:
-    st.session_state["lang"] = sel
-    try:
-        st.experimental_set_query_params(lang=sel)
-    except Exception:
-        pass
-    st.rerun()
+# Suprimir advertencias de Streamlit (opcional, pero útil para limpiar la UI)
+warnings.filterwarnings('ignore')
 
-# Diccionario de textos activo
-t = get_texts(st.session_state["lang"])
+# --- TÍTULO Y DESCRIPCIÓN ---
+st.title("🗺️ Planificador de Rutas")
+st.markdown("Crea rutas con paradas usando direcciones completas. La última parada puede ser el destino final.")
 
-# --- Encabezado ---
-st.markdown(f"# 🗺️ {t['app_title']}")
-st.caption(t["app_subtitle"])
+# --- NAVEGACIÓN POR PESTAÑAS ---
+# Si no has creado los otros archivos (tab_viajero.py y tab_turistico.py),
+# debes comentar las líneas 8, 9 y 40-41 para evitar errores.
+tab_profesional, tab_viajero, tab_turistico = st.tabs(["Profesional", "Viajero", "Turístico"])
 
-# --- Tabs con textos traducidos ---
-tab_labels = t["tabs"]
-tabs = st.tabs(tab_labels)
+with tab_profesional:
+    mostrar_profesional()
 
-# Llamadas a las pestañas
-with tabs[0]:
-    # mostrar_profesional no recibe 't'
-    mostrar_profesional() 
+# with tab_viajero:
+#     # Si usas esta línea, asegúrate de que tab_viajero.py exista
+#     # y que la función mostrar_viajero no requiera argumentos
+#     # mostrar_viajero() 
+#     st.info("La pestaña 'Viajero' aún no está implementada.")
 
-with tabs[1]:
-    # Estas pestañas sí reciben 't' (según la firma original)
-    mostrar_viajero(t) 
-
-with tabs[2]:
-    mostrar_turistico(t) 
-
-st.divider()
-st.caption(t["footer_a"])
-st.caption(t["footer_b"])
+# with tab_turistico:
+#     # Si usas esta línea, asegúrate de que tab_turistico.py exista
+#     # y que la función mostrar_turistico no requiera argumentos
+#     # mostrar_turistico()
+#     st.info("La pestaña 'Turístico' aún no está implementada.")
