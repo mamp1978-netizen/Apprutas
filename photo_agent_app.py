@@ -1,11 +1,10 @@
-# Contenido FINAL y CORREGIDO de photo_agent_app.py
-
 import streamlit as st
-from i18n import get_texts
+# Asumo que tienes un archivo i18n.py o similar
+from i18n import get_texts 
 import os
 
-# --- Clave API Google ---
-# Mantenemos esto igual
+# --- CLAVE API GOOGLE ---
+# Mantenemos esto para verificar la clave al inicio
 GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
 
 if GOOGLE_PLACES_API_KEY:
@@ -28,7 +27,7 @@ def _safe_import(modname, funcname):
         if funcname == "mostrar_profesional":
              return lambda: st.stop()
         else:
-             return lambda t: st.stop() # Retorna función que acepta 't'
+             return lambda t: st.stop() 
 
 # Importación de las funciones de las pestañas
 mostrar_profesional = _safe_import("tab_profesional", "mostrar_profesional")
@@ -38,7 +37,7 @@ mostrar_turistico   = _safe_import("tab_turistico", "mostrar_turistico")
 st.set_page_config(page_title="Planificador de Rutas", page_icon="🗺️", layout="wide")
 st.set_option("client.showErrorDetails", True)
 
-# ... (El código de detección de idioma y selector de idioma no se toca) ...
+# --- Detección y selector de idioma (se mantiene igual) ---
 def _get_query_lang():
     try:
         qp = st.query_params
@@ -79,7 +78,6 @@ if sel != current_lang:
 
 # Diccionario de textos activo
 t = get_texts(st.session_state["lang"])
-# ... (Fin del código de detección de idioma) ...
 
 # --- Encabezado ---
 st.markdown(f"# 🗺️ {t['app_title']}")
@@ -91,13 +89,15 @@ tabs = st.tabs(tab_labels)
 
 # Llamadas a las pestañas
 with tabs[0]:
+    # mostrar_profesional no recibe 't'
     mostrar_profesional() 
 
 with tabs[1]:
-    mostrar_viajero(t)
+    # Estas pestañas sí reciben 't' (según la firma original)
+    mostrar_viajero(t) 
 
 with tabs[2]:
-    mostrar_turistico(t)
+    mostrar_turistico(t) 
 
 st.divider()
 st.caption(t["footer_a"])

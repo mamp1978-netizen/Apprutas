@@ -1,14 +1,11 @@
-# Contenido COMPLETO, FINAL y CORREGIDO de tab_profesional.py
-
 import streamlit as st
-from streamlit_searchbox import st_searchbox 
+# Ya no importamos streamlit_searchbox
 from app_utils import (
     suggest_addresses,
     resolve_selection, 
     build_gmaps_url,
     make_qr,
     set_location_bias,
-    _get_key,
     _use_ip_bias 
 )
 from io import BytesIO
@@ -18,99 +15,48 @@ from io import BytesIO
 # -------------------------------
 if "prof_points" not in st.session_state:
     st.session_state["prof_points"] = []
-if "prof_q" not in st.session_state:
-    st.session_state["prof_q"] = ""
+    
+# Claves para el nuevo sistema de búsqueda
+if "prof_text_input" not in st.session_state:
+    st.session_state["prof_text_input"] = ""
+if "prof_top_suggestions" not in st.session_state:
+    st.session_state["prof_top_suggestions"] = []
+if "prof_selection" not in st.session_state:
+    st.session_state["prof_selection"] = ""
+    
+# Clave para el estado de la ruta
 if "prof_last_route_url" not in st.session_state:
     st.session_state["prof_last_route_url"] = None
 
+
 # -------------------------------
-# Componente de búsqueda y lógica de ubicación
+# FUNCIONES DE MANEJO DE ESTADO Y LÓGICA
 # -------------------------------
-def _search_box():
-    st.markdown("---")
-    
-    # Parámetros para la función suggest_addresses
-    func_kwargs={
-        "key_bucket": "prof_top",
-        "min_len": 1 
-    }
-    
-    # La barra de búsqueda (st_searchbox)
-    selected_value = st_searchbox(
-        search_function=suggest_addresses,
-        placeholder="Buscar dirección... (presione ENTER para agregar)",
-        key="prof_q_searchbox",
-        func_kwargs=func_kwargs, 
-        label="Ruta de trabajo",
-        label_visibility="collapsed"
-    )
-
-    # st.session_state["prof_q"] almacena el último valor
-    st.session_state["prof_q"] = selected_value
-
-    # Botones de acción
-    col_add, col_clear, col_loc = st.columns([1.5, 1, 3])
-
-    with col_add:
-        st.button("Añadir (ENTER)", on_click=_add_point_from_ui, type="primary")
-
-    with col_clear:
-        st.button("Limpiar", on_click=_clear_points)
-
-    # --- LÓGICA DE ACTIVACIÓN DE UBICACIÓN ---
-    with col_loc:
-        # Aseguramos que el estado del checkbox refleje si hay un sesgo activo
-        is_loc_active = st.checkbox(
-            "Usar mi ubicación", 
-            key="prof_use_loc", 
-            value=st.session_state.get("_loc_bias") is not None
-        )
-        
-        if is_loc_active:
-             # Si se activa el checkbox y NO HAY sesgo, lo creamos y forzamos rerun
-             if st.session_state.get("_loc_bias") is None:
-                 _use_ip_bias()
-                 st.rerun() 
-        else:
-             # Si se desactiva el checkbox y SÍ HAY sesgo, lo eliminamos y forzamos rerun
-             if st.session_state.get("_loc_bias") is not None:
-                 del st.session_state["_loc_bias"]
-                 st.rerun() 
-                 
-    st.markdown("---")
-
-
-# --- FUNCIÓN _add_point_from_ui (LIMPIEZA EXHAUSTIVA) ---
 
 def _add_point_from_ui():
     """Añade la dirección seleccionada/escrita a la lista y limpia la barra."""
     
-    value = (st.session_state.get("prof_q") or "").strip()
+    # Prioriza la selección del selectbox si hay sugerencias
+    if st.session_state.get("prof_top_suggestions"):
+        value = st.session_state.get("prof_selection")
+    # Si no hay sugerencias mostradas, toma el texto de entrada como punto final
+    else:
+        value = st.session_state.get("prof_text_input")
+        
+    value = (value or "").strip()
 
-    if not value or value.lower() in ["", "buscar dirección… (presione enter para agregar)"]:
-        st.warning("Escribe o selecciona una dirección.")
+    if not value:
+        st.warning("Escribe una dirección y pulsa 'Buscar', o añade la dirección manualmente si ya está completa.")
         return
 
     # 1. Añadir a la lista
     st.session_state["prof_points"].append(value)
     st.success(f"Añadido: {value}")
     
-    # 2. Limpieza EXHAUSTIVA de caché para evitar errores de renderizado/sugerencias
-    
-    st.session_state["prof_q"] = ""
-    # Esta línea limpia el valor mostrado en el widget st_searchbox, forzando un reset visual.
-    st.session_state["prof_q_searchbox"] = "" 
-    
-    # Limpiar cachés relacionados con el searchbox y las sugerencias
-    keys_to_delete = [
-        'prof_top_suggestions', 
-        'prof_q_searchboxoptions_ts', 
-        'prof_q_searchbox_ts',       
-        'prof_q_searchbox_options'
-    ]
-    for key in keys_to_delete:
-        if key in st.session_state:
-            del st.session_state[key]
+    # 2. Limpieza de estado
+    st.session_state["prof_text_input"] = ""
+    st.session_state["prof_top_suggestions"] = []
+    st.session_state["prof_selection"] = ""
         
     # 3. Forzar el re-renderizado
     st.rerun()
@@ -119,25 +65,107 @@ def _clear_points():
     """Limpia la lista de puntos y el estado de la ruta."""
     st.session_state["prof_points"] = []
     st.session_state["prof_last_route_url"] = None
-    st.session_state["prof_q"] = ""
-    st.session_state["prof_q_searchbox"] = ""
     
-    # Limpiar cachés de búsqueda para evitar el error de índices
-    keys_to_delete = [
-        'prof_top_suggestions', 
-        'prof_q_searchboxoptions_ts', 
-        'prof_q_searchbox_ts',
-        'prof_q_searchbox_options'
-    ]
-    for key in keys_to_delete:
-        if key in st.session_state:
-            del st.session_state[key]
+    # Limpieza del sistema de búsqueda
+    st.session_state["prof_text_input"] = ""
+    st.session_state["prof_top_suggestions"] = []
+    st.session_state["prof_selection"] = ""
 
     st.rerun()
 
+def _run_search():
+    """Ejecuta la búsqueda de sugerencias manualmente."""
+    term = st.session_state.get("prof_text_input", "").strip()
+    
+    # La API de Google es más eficiente con 3 o más caracteres
+    if len(term) < 3:
+        st.warning("Escribe al menos 3 caracteres para que la búsqueda sea efectiva.")
+        st.session_state["prof_top_suggestions"] = [] # Asegura que no haya sugerencias viejas
+        return
+        
+    # Llama a la función de la API de Google (AHORA SÓLO AQUÍ)
+    suggestions = suggest_addresses(term, key_bucket="prof_top", min_len=3) 
+    
+    # Guarda las sugerencias para el selectbox
+    st.session_state["prof_top_suggestions"] = suggestions
+    
+    if not suggestions:
+        st.warning(f"No se encontraron sugerencias para '{term}'. Intenta añadirlo directamente.")
+    else:
+        # Si hay sugerencias, selecciona la primera por defecto
+        st.session_state["prof_selection"] = suggestions[0]
+
 
 # -------------------------------
-# Función principal de la pestaña (El resto del código se mantiene igual)
+# Componente de búsqueda y lógica de ubicación (REESCRITO)
+# -------------------------------
+
+def _search_box():
+    st.markdown("---")
+    
+    # 1. ENTRADA DE TEXTO (ya no hace un rerun con cada letra)
+    col_input, col_search = st.columns([4, 1])
+    
+    with col_input:
+        st.text_input(
+            "Buscar dirección...",
+            key="prof_text_input",
+            label_visibility="collapsed",
+            placeholder="Escribe la dirección (mín. 3 letras) y pulsa 'Buscar'"
+        )
+    
+    # 2. BOTÓN DE BÚSQUEDA MANUAL (fuerza la llamada a la API)
+    with col_search:
+        # El botón llama a la función de búsqueda
+        st.button("🔎 Buscar", on_click=_run_search, use_container_width=True)
+
+
+    # 3. SELECTBOX CON SUGERENCIAS (solo aparece si hay resultados)
+    suggestions = st.session_state.get("prof_top_suggestions", [])
+    
+    if suggestions:
+        st.selectbox(
+            "Selecciona la sugerencia más precisa:",
+            options=suggestions,
+            key="prof_selection",
+            label_visibility="visible"
+        )
+    # else: 
+        # Ya no mostramos el mensaje de "no sugerencias" aquí, se gestiona en _run_search
+
+
+    # 4. Botones de acción
+    col_add, col_clear, col_loc = st.columns([1.5, 1, 3])
+
+    with col_add:
+        # El botón de Añadir ahora utiliza el valor guardado en prof_selection/prof_text_input
+        st.button("Añadir", on_click=_add_point_from_ui, type="primary")
+
+    with col_clear:
+        st.button("Limpiar", on_click=_clear_points)
+
+    # --- LÓGICA DE ACTIVACIÓN DE UBICACIÓN (se mantiene) ---
+    with col_loc:
+        is_loc_active = st.checkbox(
+            "Usar mi ubicación", 
+            key="prof_use_loc", 
+            value=st.session_state.get("_loc_bias") is not None
+        )
+        
+        if is_loc_active:
+             if st.session_state.get("_loc_bias") is None:
+                 _use_ip_bias()
+                 st.rerun() 
+        else:
+             if st.session_state.get("_loc_bias") is not None:
+                 del st.session_state["_loc_bias"]
+                 st.rerun() 
+                 
+    st.markdown("---")
+
+
+# -------------------------------
+# Función principal de la pestaña (sin cambios, solo usa _search_box)
 # -------------------------------
 def mostrar_profesional():
     st.header("Ruta de trabajo")
