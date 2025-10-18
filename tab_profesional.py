@@ -30,14 +30,12 @@ def _search_box():
     st.markdown("---")
     
     # Parámetros para la función suggest_addresses
-    # NOTA: En la versión corregida de app_utils, key_bucket se extrae de **kwargs
     func_kwargs={
         "key_bucket": "prof_top",
         "min_len": 1 
     }
     
     # La barra de búsqueda (st_searchbox)
-    # Eliminamos default_value para evitar que entre en conflicto con la limpieza de estado
     selected_value = st_searchbox(
         search_function=suggest_addresses,
         placeholder="Buscar dirección... (presione ENTER para agregar)",
@@ -47,14 +45,13 @@ def _search_box():
         label_visibility="collapsed"
     )
 
-    # st.session_state["prof_q"] ahora almacena el último valor que el usuario ingresó/seleccionó
+    # st.session_state["prof_q"] almacena el último valor
     st.session_state["prof_q"] = selected_value
 
     # Botones de acción
     col_add, col_clear, col_loc = st.columns([1.5, 1, 3])
 
     with col_add:
-        # El botón de Añadir ahora utiliza el valor guardado en st.session_state["prof_q"]
         st.button("Añadir (ENTER)", on_click=_add_point_from_ui, type="primary")
 
     with col_clear:
@@ -62,13 +59,20 @@ def _search_box():
 
     # --- LÓGICA DE ACTIVACIÓN DE UBICACIÓN ---
     with col_loc:
-        is_loc_active = st.checkbox("Usar mi ubicación", key="prof_use_loc", value=st.session_state.get("_loc_bias") is not None)
+        # Aseguramos que el estado del checkbox refleje si hay un sesgo activo
+        is_loc_active = st.checkbox(
+            "Usar mi ubicación", 
+            key="prof_use_loc", 
+            value=st.session_state.get("_loc_bias") is not None
+        )
         
         if is_loc_active:
+             # Si se activa el checkbox y NO HAY sesgo, lo creamos y forzamos rerun
              if st.session_state.get("_loc_bias") is None:
                  _use_ip_bias()
                  st.rerun() 
         else:
+             # Si se desactiva el checkbox y SÍ HAY sesgo, lo eliminamos y forzamos rerun
              if st.session_state.get("_loc_bias") is not None:
                  del st.session_state["_loc_bias"]
                  st.rerun() 
@@ -76,38 +80,30 @@ def _search_box():
     st.markdown("---")
 
 
-# --- EN /workspaces/Apprutas/tab_profesional.py (función _add_point_from_ui) ---
+# --- FUNCIÓN _add_point_from_ui (LIMPIEZA EXHAUSTIVA) ---
 
 def _add_point_from_ui():
     """Añade la dirección seleccionada/escrita a la lista y limpia la barra."""
     
-    # 1. Obtenemos el valor de la sesión
     value = (st.session_state.get("prof_q") or "").strip()
 
     if not value or value.lower() in ["", "buscar dirección… (presione enter para agregar)"]:
         st.warning("Escribe o selecciona una dirección.")
         return
 
-    # 2. Añadir a la lista
+    # 1. Añadir a la lista
     st.session_state["prof_points"].append(value)
     st.success(f"Añadido: {value}")
     
-    # 3. Limpieza exhaustiva
+    # 2. Limpieza EXHAUSTIVA de caché para evitar errores de renderizado/sugerencias
     
-    # Limpiar el valor en la sesión (el valor que se usa)
     st.session_state["prof_q"] = ""
-
-    # Limpiar el widget de búsqueda
-    # st_searchbox no tiene un método .reset() directamente. La mejor manera es manipular 
-    # la clave del widget a un valor vacío.
+    # Esta línea limpia el valor mostrado en el widget st_searchbox, forzando un reset visual.
     st.session_state["prof_q_searchbox"] = "" 
     
-    # Limpiar el caché de sugerencias (prof_top_suggestions)
-    if 'prof_top_suggestions' in st.session_state:
-        del st.session_state['prof_top_suggestions']
-
-    # Limpiar el caché de opciones internas del st_searchbox (CRUCIAL para los errores de renderizado)
+    # Limpiar cachés relacionados con el searchbox y las sugerencias
     keys_to_delete = [
+        'prof_top_suggestions', 
         'prof_q_searchboxoptions_ts', 
         'prof_q_searchbox_ts',       
         'prof_q_searchbox_options'
@@ -116,7 +112,7 @@ def _add_point_from_ui():
         if key in st.session_state:
             del st.session_state[key]
         
-    # 4. Forzar el re-renderizado
+    # 3. Forzar el re-renderizado
     st.rerun()
 
 def _clear_points():
@@ -141,7 +137,7 @@ def _clear_points():
 
 
 # -------------------------------
-# Función principal de la pestaña
+# Función principal de la pestaña (El resto del código se mantiene igual)
 # -------------------------------
 def mostrar_profesional():
     st.header("Ruta de trabajo")

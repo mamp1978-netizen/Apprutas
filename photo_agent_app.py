@@ -24,10 +24,6 @@ def _safe_import(modname, funcname):
     except Exception as e:
         st.error(f"Error cargando `{modname}.{funcname}`")
         st.exception(e)
-        # Para evitar que el error detenga toda la app, devolvemos una función que:
-        # 1. Para 'profesional' no toma argumentos.
-        # 2. Para 'viajero' y 'turistico', toma un argumento (t) para evitar el TypeError.
-        # En caso de error, siempre detendrá la ejecución del script.
         # La función de fallback debe coincidir con la firma esperada.
         if funcname == "mostrar_profesional":
              return lambda: st.stop()
@@ -93,17 +89,15 @@ st.caption(t["app_subtitle"])
 tab_labels = t["tabs"]
 tabs = st.tabs(tab_labels)
 
-# CORRECCIÓN DE LLAMADAS:
-# - Profesional: Se llama sin 't' (según la definición en tab_profesional.py que te di)
-# - Viajero/Turístico: Se llaman CON 't' (según la definición original de tu proyecto)
+# Llamadas a las pestañas
 with tabs[0]:
     mostrar_profesional() 
 
 with tabs[1]:
-    mostrar_viajero(t) # Vuelve a pasar el argumento 't'
+    mostrar_viajero(t)
 
 with tabs[2]:
-    mostrar_turistico(t) # Vuelve a pasar el argumento 't'
+    mostrar_turistico(t)
 
 st.divider()
 st.caption(t["footer_a"])
