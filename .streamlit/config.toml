@@ -4,16 +4,19 @@
 gatherUsageStats = false 
 
 [global]
-# CRÍTICO: Deshabilita el menú de configuración de Streamlit.
-# Esto oculta las opciones de 'View source file' (Ver código fuente) y 'Settings'.
-# Si prefieres mantener otras opciones del menú (como el modo oscuro), puedes omitir esta línea, 
-# pero la mejor forma de asegurar que el código no se vea es desactivando el menú completo.
+# CRÍTICO: Deshabilita el menú principal de tres puntos, lo que oculta 'Share', 'Settings' 
+# y la opción de 'View source file' (Ver código fuente).
 showSidebarNavigation = false 
 
+[client]
+# Deshabilita el indicador de 'Rerunning' / 'Running' en la esquina inferior derecha 
+# y el botón negro de 'Administrar la aplicación'.
+displayEnabled = false 
+
 [theme]
-# Puedes personalizar el aspecto de la aplicación aquí
-# primaryColor = "#F63366" 
-# backgroundColor = "#FFFFFF"
-# secondaryBackgroundColor = "#F0F2F6"
-# textColor = "#262730"
-# font = "sans serif"
+# Puedes personalizar el aspecto de la aplicación aquí (opcional)
+primaryColor = "#4f46e5"
+backgroundColor = "white"
+secondaryBackgroundColor = "#f6f7fb"
+textColor = "#111827"
+font = "sans serif"
