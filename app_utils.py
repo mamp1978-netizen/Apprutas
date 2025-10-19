@@ -6,8 +6,7 @@ from io import BytesIO
 from urllib.parse import quote
 
 # Inicialización del cliente de Google Maps
-# Asumimos que la clave está en secrets.toml o env vars
-API_KEY = os.environ.get("GOOGLE_PLACES_API_KEY") 
+API_KEY = st.secrets.get("GOOGLE_PLACES_API_KEY") or os.environ.get("GOOGLE_PLACES_API_KEY") 
 gmaps = googlemaps.Client(key=API_KEY) if API_KEY else None
 
 # Bucket de metadatos (para almacenar place_id/lat/lng asociados a las sugerencias)
