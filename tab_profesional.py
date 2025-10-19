@@ -273,9 +273,7 @@ def mostrar_profesional():
     current_index = st.session_state["selected_point_index"]
     is_editing = st.session_state["is_editing_point"]
 
-# ... (código anterior)
-
-    # 3.1. LISTADO DE PUNTOS CON BOTONES DE SELECCIÓN
+# 3.1. LISTADO DE PUNTOS CON BOTONES DE SELECCIÓN
     st.markdown("---")
     
     for i, p in enumerate(pts):
@@ -283,29 +281,41 @@ def mostrar_profesional():
         prefix = "Origen" if i == 0 else ("Destino" if i == len(pts) - 1 else f"Parada #{i}:")
         display_text = f"**{prefix}** {p}"
         
-        # *** CAMBIO AQUÍ: Reducimos el ancho de la columna del botón de selección a 0.2 ***
+        # *** AJUSTE CLAVE AQUÍ: Mantenemos col_select muy pequeño ([0.2]) para el botón "Elegir" ***
         col_select, col_text = st.columns([0.2, 4]) 
         
         is_selected = (i == current_index)
         
         with col_select:
             # Botón de selección para establecer el índice
-            btn_label = "📍" if is_selected else "Elegir"
+            # Usamos solo un icono para hacerlo más compacto
+            btn_label = "📍" if is_selected else " " # Usamos un espacio para que el botón deseleccionado sea solo un cuadrado
             btn_type = "primary" if is_selected else "secondary"
             
-            # Usamos un texto más corto en el botón "Elegir"
             st.button(
                 btn_label,
                 key=f"select_point_{i}",
                 on_click=_select_point,
                 args=(i,),
                 use_container_width=True,
-                type=btn_type
+                type=btn_type,
+                help="Selecciona este punto para moverlo, editarlo o eliminarlo."
             )
-# ... (código que sigue)
-
-
-# ... (código anterior)
+            
+        with col_text:
+            # *** SOLUCIÓN: Este código renderiza la dirección y la etiqueta (Origen/Parada/Destino) ***
+            bg_color = "#E6F7FF" if is_selected else "transparent"
+            
+            st.markdown(
+                f"""
+                <div style='background-color: {bg_color}; padding: 10px; border-radius: 5px; margin-left: -15px;'>
+                    {display_text}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            
+    st.markdown("---")
 
     # --- 3.2. BARRA DE HERRAMIENTAS COMPACTA DE ICONOS ---
     st.markdown(f"**Punto Activo:** {current_index + 1} de {len(pts)}")
