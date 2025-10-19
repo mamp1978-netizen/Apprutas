@@ -1,12 +1,19 @@
-[theme]
-primaryColor = "#4f46e5"
-backgroundColor = "white"
-secondaryBackgroundColor = "#f6f7fb"
-textColor = "#111827"
-font = "sans serif"
-
-[server]
-headless = true
-
+# Configuración global para Streamlit Cloud
 [browser]
-gatherUsageStats = false
+# Desactiva la recolección de estadísticas de uso
+gatherUsageStats = false 
+
+[global]
+# CRÍTICO: Deshabilita el menú de configuración de Streamlit.
+# Esto oculta las opciones de 'View source file' (Ver código fuente) y 'Settings'.
+# Si prefieres mantener otras opciones del menú (como el modo oscuro), puedes omitir esta línea, 
+# pero la mejor forma de asegurar que el código no se vea es desactivando el menú completo.
+showSidebarNavigation = false 
+
+[theme]
+# Puedes personalizar el aspecto de la aplicación aquí
+# primaryColor = "#F63366" 
+# backgroundColor = "#FFFFFF"
+# secondaryBackgroundColor = "#F0F2F6"
+# textColor = "#262730"
+# font = "sans serif"
