@@ -243,12 +243,15 @@ def _search_box():
 # -------------------------------
 # Función principal de la pestaña (IMPLEMENTA LISTA DE BOTONES)
 # -------------------------------
+# Archivo: tab_profesional.py
+
 def mostrar_profesional():
     
+    # ⭐️ VERIFICA: Esta es la primera línea de la función.
     initialize_session_state() 
 
     st.header("Ruta de trabajo")
-    
+    # ...    
     # 1. Opciones de ruta (Tipo y Evitar)
     col_mode, col_avoid = st.columns([1, 1])
     with col_mode:
@@ -273,6 +276,10 @@ def mostrar_profesional():
 
 # Archivo: tab_profesional.py (Línea ~190)
 
+# Archivo: tab_profesional.py
+
+# ... (código anterior hasta la sección 3.1)
+
 # 3.1. LISTADO DE PUNTOS CON DESCRIPCIONES Y BOTONES
     st.markdown("---")
     
@@ -281,15 +288,14 @@ def mostrar_profesional():
         prefix = "Origen" if i == 0 else ("Destino" if i == len(pts) - 1 else f"Parada #{i}:")
         display_text = f"**{prefix}** {p}"
         
-        # ⭐️ CORRECCIÓN 1: Columna de selección muy pequeña (0.5) vs Texto grande (4).
-        # Esto hace que el botón de selección sea muy compacto.
+        # ⭐️ CORRECCIÓN 1: Ajuste de columnas. [0.5] para el botón de selección, [4] para el texto.
         col_select, col_text = st.columns([0.5, 4]) 
         
         is_selected = (i == current_index)
         
         with col_select:
-            # Botón de selección. Usamos solo un icono compacto.
-            btn_label = "📌" if is_selected else " " # Cambié a 📌 para que se vea mejor
+            # Botón de selección para establecer el índice. Usamos un icono compacto.
+            btn_label = "📍" if is_selected else " " 
             btn_type = "primary" if is_selected else "secondary"
             
             st.button(
@@ -299,7 +305,6 @@ def mostrar_profesional():
                 args=(i,),
                 use_container_width=True,
                 type=btn_type,
-                # El padding: 1px en el estilo HTML ayuda a forzar el tamaño pequeño
                 help="Selecciona este punto para moverlo, editarlo o eliminarlo."
             )
             
@@ -318,13 +323,12 @@ def mostrar_profesional():
             
     st.markdown("---")
 
-# 3.2. BARRA DE HERRAMIENTAS COMPACTA DE ICONOS
-# ... (El resto de la sección 3.2 y 3.3 está bien, utiliza los iconos y st.columns(4))
-    # --- 3.2. BARRA DE HERRAMIENTAS COMPACTA DE ICONOS ---
+# --- 3.2. BARRA DE HERRAMIENTAS COMPACTA DE ICONOS ---
     st.markdown(f"**Punto Activo:** {current_index + 1} de {len(pts)}")
     
-    col_up, col_down, col_edit, col_del = st.columns(4)
-    
+    # ⭐️ CORRECCIÓN 2: Usar 4 columnas de igual tamaño (4) es más robusto en móvil.
+    col_up, col_down, col_edit, col_del = st.columns(4) 
+# ... (el resto de la sección 3.2 está bien)    
     # Lógica de los botones de acción (solo se muestran si son activos)
     
     with col_up:
