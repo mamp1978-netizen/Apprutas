@@ -1,5 +1,5 @@
 import streamlit as st
-# import warnings # Puedes descomentar si quieres gestionar warnings específicos
+# import warnings # No es necesario si no lo usas
 
 # --- 1. IMPORTACIONES ---
 # Importa la función de la pestaña profesional
@@ -23,12 +23,12 @@ st.sidebar.info(
     "Considera una pequeña donación para ayudarme a mantener y mejorar la aplicación."
 )
 
-# ⭐️ CÓDIGO DEL BOTÓN DE DONACIÓN CON URL DIRECTA (CORREGIDO) ⭐️
+# ⭐️ CÓDIGO DEL BOTÓN DE DONACIÓN CON URL DIRECTA Y QR ⭐️
 
 # La URL DEBE estar entre comillas dobles o simples.
 DONATION_URL = "https://www.paypal.com/donate/?business=73LFHKS2WCQ9U&no_recurring=0&item_name=Ayuda+para+desarrolladores&currency_code=EUR" 
 
-# Muestra la imagen del QR (opcional)
+# Muestra la imagen del QR
 st.sidebar.image("qrcode.png", caption="Escanea para donar vía PayPal", use_column_width=True)
 
 # Muestra el botón de enlace directo

@@ -205,11 +205,7 @@ def _search_box():
             label_visibility="visible"
         )
     
-# ... (código dentro de _search_box, después del st.selectbox)
-
-    # 3. Botones de acción y ubicación
-    # *** CAMBIO CLAVE: Usamos una proporción de columnas más compacta para el móvil ***
-    # [1.5, 1, 1] le da a Añadir el doble de ancho que Limpiar y Usar mi ubicación.
+    # 3. Botones de acción y ubicación (Compactación de botones)
     col_add, col_clear, col_loc = st.columns([1.5, 1, 1]) 
 
     with col_add:
@@ -218,7 +214,7 @@ def _search_box():
             on_click=_add_point_from_ui, 
             type="primary",
             key="prof_add_btn",
-            use_container_width=True # Aseguramos que ocupe todo su espacio
+            use_container_width=True
         )
 
     with col_clear:
@@ -226,15 +222,13 @@ def _search_box():
 
     # Lógica de ubicación
     with col_loc:
-        # Aquí se usa un checkbox más pequeño. Lo ponemos directamente sin un st.button
         is_loc_active = st.checkbox(
-            "📍 Usar mi ubicación", # Agregamos un icono para compactar el texto
+            "📍 Usar mi ubicación", 
             key="prof_use_loc_cb", 
             value=st.session_state.get("_loc_bias") is not None,
             help="Si está activado, la búsqueda se sesga a tu ubicación IP."
         )
         
-        # ... (Lógica de gestión de ubicación)
         if is_loc_active:
              if st.session_state.get("_loc_bias") is None:
                  _use_ip_bias()
@@ -277,7 +271,7 @@ def mostrar_profesional():
     current_index = st.session_state["selected_point_index"]
     is_editing = st.session_state["is_editing_point"]
 
-# 3.1. LISTADO DE PUNTOS CON BOTONES DE SELECCIÓN
+# 3.1. LISTADO DE PUNTOS CON DESCRIPCIONES Y BOTONES
     st.markdown("---")
     
     for i, p in enumerate(pts):
@@ -285,15 +279,14 @@ def mostrar_profesional():
         prefix = "Origen" if i == 0 else ("Destino" if i == len(pts) - 1 else f"Parada #{i}:")
         display_text = f"**{prefix}** {p}"
         
-        # *** AJUSTE CLAVE AQUÍ: Mantenemos col_select muy pequeño ([0.2]) para el botón "Elegir" ***
+        # Mantenemos col_select pequeño ([0.2]) para el botón de selección
         col_select, col_text = st.columns([0.2, 4]) 
         
         is_selected = (i == current_index)
         
         with col_select:
-            # Botón de selección para establecer el índice
-            # Usamos solo un icono para hacerlo más compacto
-            btn_label = "📍" if is_selected else " " # Usamos un espacio para que el botón deseleccionado sea solo un cuadrado
+            # Botón de selección 
+            btn_label = "📍" if is_selected else " " 
             btn_type = "primary" if is_selected else "secondary"
             
             st.button(
@@ -307,7 +300,7 @@ def mostrar_profesional():
             )
             
         with col_text:
-            # *** SOLUCIÓN: Este código renderiza la dirección y la etiqueta (Origen/Parada/Destino) ***
+            # Renderiza la dirección y la etiqueta (Origen/Parada/Destino)
             bg_color = "#E6F7FF" if is_selected else "transparent"
             
             st.markdown(
@@ -324,50 +317,39 @@ def mostrar_profesional():
     # --- 3.2. BARRA DE HERRAMIENTAS COMPACTA DE ICONOS ---
     st.markdown(f"**Punto Activo:** {current_index + 1} de {len(pts)}")
     
-    # *** CAMBIO CLAVE: Usamos 4 columnas de igual tamaño para forzar la fila compacta en móvil ***
-    # Usamos st.columns(4) que es más compacto que [1, 1, 1, 1]
     col_up, col_down, col_edit, col_del = st.columns(4)
     
     # Lógica de los botones de acción (solo se muestran si son activos)
     
     with col_up:
-        # Solo mostramos el botón si la condición de movimiento es válida Y no estamos editando
         if current_index > 0 and not is_editing:
             st.button("⬆️", key="btn_up", on_click=_move_point, args=("up",), use_container_width=True, help="Mover punto seleccionado hacia arriba.")
             
     with col_down:
-        # Solo mostramos el botón si la condición de movimiento es válida Y no estamos editando
         if current_index < len(pts) - 1 and not is_editing:
             st.button("⬇️", key="btn_down", on_click=_move_point, args=("down",), use_container_width=True, help="Mover punto seleccionado hacia abajo.")
             
     with col_edit:
         if is_editing:
-            # Icono para Guardar
             st.button("💾", key="btn_save", on_click=_save_point_from_toolbar, use_container_width=True, type="primary", help="Guardar el texto editado.")
         else:
-            # Icono para Editar
             st.button("✏️", key="btn_edit", on_click=_enter_edit_mode, use_container_width=True, help="Editar la dirección del punto seleccionado.")
             
     with col_del:
         if not is_editing:
-            # Icono para Borrar
             st.button("🗑️", key="btn_delete", on_click=_delete_point, use_container_width=True, help="Eliminar el punto seleccionado.")
         else:
-            # Icono para Cancelar
             st.button("❌", key="btn_cancel", on_click=_reset_point_selection, use_container_width=True, help="Cancelar la edición.")
 
 
     # --- 3.3. CAMPO DE EDICIÓN ---
-# ... (El resto del código se mantiene igual)
-
-    # --- 3.3. CAMPO DE EDICIÓN ---
     if is_editing:
         st.text_input(
-            f"Modificar punto seleccionado (Índice {current_index}):",
+            f"Modificar punto seleccionado (Índice {current_index + 1}):",
             value=st.session_state["edit_input_value"],
             key="edit_input_value",
             label_visibility="visible",
-            on_change=_save_point_from_toolbar # Guarda al presionar ENTER
+            on_change=_save_point_from_toolbar 
         )
         st.markdown("---") 
 
@@ -445,26 +427,3 @@ def mostrar_profesional():
 
         except Exception as e:
             st.error(f"Error al generar el QR: {e}")
-            # En el archivo tab_profesional.py, al final de la función mostrar_profesional()
-
-# ... (código anterior)
-
-    # 6. Botón de Donaciones
-    st.markdown("---")
-    st.markdown("<h3 style='text-align: center;'>🙏 ¿Te ha sido útil?</h3>", unsafe_allow_html=True)
-    
-    DONATION_URL = "URL_DE_TU_PLATAFORMA_DE_DONACIÓN_AQUÍ" 
-    
-    col_empty1, col_donation, col_empty2 = st.columns([1, 2, 1])
-
-    with col_donation:
-        st.markdown(
-            f"""
-            <a href="{DONATION_URL}" target="_blank">
-                <button style="background-color: #FF5733; color: white; padding: 15px 30px; border: none; border-radius: 8px; cursor: pointer; font-size: 18px; font-weight: bold; width: 100%;">
-                    Apoya el desarrollo (Invítame a un café)
-                </button>
-            </a>
-            """,
-            unsafe_allow_html=True
-        )

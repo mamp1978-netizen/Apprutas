@@ -107,8 +107,9 @@ def _use_ip_bias():
 
 def build_gmaps_url(origin: str, destination: str, waypoints: list = None, mode: str = "driving", avoid: str = None, optimize: bool = True) -> str:
     """
-    Construye una URL de Google Maps de direcciones (daddr) con waypoints.
+    Construye una URL de Google Maps para direcciones que incluye origen, destino y waypoints.
     """
+    # CORRECCIÓN: Usando la URL base de Google Maps
     base_url = "https://www.google.com/maps/dir/"
     
     all_points = [origin]
@@ -132,7 +133,6 @@ def build_waze_url(origin: str, destination: str, waypoints: list = None) -> str
     """
     Construye una URL de Waze. Solo enlaza al destino, ya que Waze no soporta waypoints complejos en URL.
     """
-    # Solo necesitamos el destino final, ya que Waze no maneja múltiples waypoints en la URL.
     encoded_dest = quote(destination)
     return f"https://waze.com/ul?q={encoded_dest}&navigate=yes"
 
@@ -147,7 +147,6 @@ def build_apple_maps_url(origin: str, destination: str, waypoints: list = None) 
     destination_path = destination
     if waypoints:
         for wp in waypoints:
-            # Aunque se puede intentar, Apple Maps es menos fiable con muchas paradas vía URL.
             destination_path += f"&to={wp}" 
             
     encoded_destination_path = quote(destination_path)
