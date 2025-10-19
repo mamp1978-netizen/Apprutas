@@ -30,7 +30,7 @@ st.sidebar.info(
 st.sidebar.image("qrcode.png", caption="Escanea para donar vía PayPal", use_column_width=True)
 
 # 2. Opcionalmente, puedes mantener el botón/enlace directo de respaldo:
-DONATION_URL = "URL_DE_TU_PLATAFORMA_DE_DONACIÓN_AQUÍ" # Sustituye por el enlace directo de PayPal.
+DONATION_URL = https://www.paypal.com/donate/?business=73LFHKS2WCQ9U&no_recurring=0&item_name=Ayuda+para+desarrolladores&currency_code=EUR # Sustituye por el enlace directo de PayPal.
 
 st.sidebar.markdown(
     f"""
