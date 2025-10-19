@@ -324,8 +324,8 @@ def mostrar_profesional():
     
     # Usamos 4 columnas para los iconos de acción (Mover Arriba, Mover Abajo, Editar/Guardar, Borrar/Cancelar)
     # y una columna vacía para empujar los iconos a la izquierda y mantener el espacio.
-    col_up, col_down, col_edit, col_del, _ = st.columns([1, 1, 1, 1, 3])
-    
+    # CÓDIGO CORREGIDO: Cuatro columnas de igual tamaño [1, 1, 1, 1]
+    col_up, col_down, col_edit, col_del = st.columns(4) # Opcionalmente, puedes usar st.columns([1, 1, 1, 1])    
     # Lógica de los botones de acción (depende del estado de edición y el índice)
     
     with col_up:
