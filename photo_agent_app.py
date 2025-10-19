@@ -1,5 +1,5 @@
 import streamlit as st
-# import warnings # No es necesario si no lo usas
+# import warnings # Puedes descomentar si quieres gestionar warnings específicos
 
 # --- 1. IMPORTACIONES ---
 # Importa la función de la pestaña profesional
@@ -8,10 +8,10 @@ from tab_profesional import mostrar_profesional
 # from tab_turistico import mostrar_turistico # Descomentar cuando estas pestañas estén listas
 
 
-# --- 2. CONFIGURACIÓN DE PÁGINA Y BARRA LATERAL ---
+# --- 2. CONFIGURACIÓN DE PÁGINA Y BARRA LATERAL (DONACIONES) ---
 st.set_page_config(
     page_title="Planificador de Rutas",
-    layout="wide", 
+    layout="wide", # Usamos layout wide para aprovechar el espacio en PC
     initial_sidebar_state="expanded" 
 )
 
@@ -23,15 +23,15 @@ st.sidebar.info(
     "Considera una pequeña donación para ayudarme a mantener y mejorar la aplicación."
 )
 
-# ⭐️ IMPLEMENTACIÓN DEL CÓDIGO QR ⭐️
+# ⭐️ CÓDIGO DEL BOTÓN DE DONACIÓN CON URL DIRECTA (CORREGIDO) ⭐️
 
-# 1. Muestra la imagen del QR para escanear
-# Asegúrate de que 'qrcode.png' está en el directorio de tu aplicación
+# La URL DEBE estar entre comillas dobles o simples.
+DONATION_URL = "https://www.paypal.com/donate/?business=73LFHKS2WCQ9U&no_recurring=0&item_name=Ayuda+para+desarrolladores&currency_code=EUR" 
+
+# Muestra la imagen del QR (opcional)
 st.sidebar.image("qrcode.png", caption="Escanea para donar vía PayPal", use_column_width=True)
 
-# 2. Opcionalmente, puedes mantener el botón/enlace directo de respaldo:
-DONATION_URL = https://www.paypal.com/donate/?business=73LFHKS2WCQ9U&no_recurring=0&item_name=Ayuda+para+desarrolladores&currency_code=EUR # Sustituye por el enlace directo de PayPal.
-
+# Muestra el botón de enlace directo
 st.sidebar.markdown(
     f"""
     <a href="{DONATION_URL}" target="_blank">
@@ -45,7 +45,6 @@ st.sidebar.markdown(
 
 st.sidebar.markdown("---") # Separador para limpiar la barra lateral
 
-# ... (El resto del código de la función main() continúa abajo)
 
 # --- 3. FUNCIÓN PRINCIPAL DE LA APLICACIÓN ---
 def main():
