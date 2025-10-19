@@ -205,31 +205,36 @@ def _search_box():
             label_visibility="visible"
         )
     
+# ... (código dentro de _search_box, después del st.selectbox)
+
     # 3. Botones de acción y ubicación
-    col_add, col_clear, col_loc = st.columns([1.5, 1, 3])
+    # *** CAMBIO CLAVE: Usamos una proporción de columnas más compacta para el móvil ***
+    # [1.5, 1, 1] le da a Añadir el doble de ancho que Limpiar y Usar mi ubicación.
+    col_add, col_clear, col_loc = st.columns([1.5, 1, 1]) 
 
     with col_add:
         st.button(
             "Añadir", 
             on_click=_add_point_from_ui, 
             type="primary",
-            key="prof_add_btn" 
+            key="prof_add_btn",
+            use_container_width=True # Aseguramos que ocupe todo su espacio
         )
 
     with col_clear:
-        st.button("Limpiar", on_click=_clear_points, key="prof_clear_btn")
+        st.button("Limpiar", on_click=_clear_points, key="prof_clear_btn", use_container_width=True)
 
     # Lógica de ubicación
     with col_loc:
-        # Aquí se usa el valor del checkbox para activar/desactivar la ubicación
+        # Aquí se usa un checkbox más pequeño. Lo ponemos directamente sin un st.button
         is_loc_active = st.checkbox(
-            "Usar mi ubicación", 
+            "📍 Usar mi ubicación", # Agregamos un icono para compactar el texto
             key="prof_use_loc_cb", 
             value=st.session_state.get("_loc_bias") is not None,
             help="Si está activado, la búsqueda se sesga a tu ubicación IP."
         )
         
-        # Lógica para gestionar el estado del sesgo de ubicación
+        # ... (Lógica de gestión de ubicación)
         if is_loc_active:
              if st.session_state.get("_loc_bias") is None:
                  _use_ip_bias()
@@ -240,7 +245,6 @@ def _search_box():
                  _force_rerun_with_clear()
                  
     st.markdown("---")
-
 
 # -------------------------------
 # Función principal de la pestaña (IMPLEMENTA LISTA DE BOTONES)
