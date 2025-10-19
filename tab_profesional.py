@@ -271,6 +271,8 @@ def mostrar_profesional():
     current_index = st.session_state["selected_point_index"]
     is_editing = st.session_state["is_editing_point"]
 
+# Archivo: tab_profesional.py (Línea ~190)
+
 # 3.1. LISTADO DE PUNTOS CON DESCRIPCIONES Y BOTONES
     st.markdown("---")
     
@@ -279,14 +281,15 @@ def mostrar_profesional():
         prefix = "Origen" if i == 0 else ("Destino" if i == len(pts) - 1 else f"Parada #{i}:")
         display_text = f"**{prefix}** {p}"
         
-        # Mantenemos col_select pequeño ([0.2]) para el botón de selección
-        col_select, col_text = st.columns([0.2, 4]) 
+        # ⭐️ CORRECCIÓN 1: Columna de selección muy pequeña (0.5) vs Texto grande (4).
+        # Esto hace que el botón de selección sea muy compacto.
+        col_select, col_text = st.columns([0.5, 4]) 
         
         is_selected = (i == current_index)
         
         with col_select:
-            # Botón de selección 
-            btn_label = "📍" if is_selected else " " 
+            # Botón de selección. Usamos solo un icono compacto.
+            btn_label = "📌" if is_selected else " " # Cambié a 📌 para que se vea mejor
             btn_type = "primary" if is_selected else "secondary"
             
             st.button(
@@ -296,11 +299,12 @@ def mostrar_profesional():
                 args=(i,),
                 use_container_width=True,
                 type=btn_type,
+                # El padding: 1px en el estilo HTML ayuda a forzar el tamaño pequeño
                 help="Selecciona este punto para moverlo, editarlo o eliminarlo."
             )
             
         with col_text:
-            # Renderiza la dirección y la etiqueta (Origen/Parada/Destino)
+            # Renderiza la dirección y la etiqueta
             bg_color = "#E6F7FF" if is_selected else "transparent"
             
             st.markdown(
@@ -314,6 +318,8 @@ def mostrar_profesional():
             
     st.markdown("---")
 
+# 3.2. BARRA DE HERRAMIENTAS COMPACTA DE ICONOS
+# ... (El resto de la sección 3.2 y 3.3 está bien, utiliza los iconos y st.columns(4))
     # --- 3.2. BARRA DE HERRAMIENTAS COMPACTA DE ICONOS ---
     st.markdown(f"**Punto Activo:** {current_index + 1} de {len(pts)}")
     
@@ -340,7 +346,6 @@ def mostrar_profesional():
             st.button("🗑️", key="btn_delete", on_click=_delete_point, use_container_width=True, help="Eliminar el punto seleccionado.")
         else:
             st.button("❌", key="btn_cancel", on_click=_reset_point_selection, use_container_width=True, help="Cancelar la edición.")
-
 
     # --- 3.3. CAMPO DE EDICIÓN ---
     if is_editing:

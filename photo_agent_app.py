@@ -26,7 +26,7 @@ st.sidebar.info(
 # ⭐️ CÓDIGO DEL BOTÓN DE DONACIÓN CON URL DIRECTA Y QR ⭐️
 
 # La URL DEBE estar entre comillas dobles o simples.
-DONATION_URL = "https://www.paypal.com/donate/?business=73LFHKS2WCQ9U&no_recurring=0&item_name=Ayuda+para+desarrolladores&currency_code=EUR" 
+DONATION_URL = https://www.paypal.com/donate/?business=73LFHKS2WCQ9U&no_recurring=0&item_name=Ayuda+para+desarrolladores&currency_code=EUR 
 
 # Muestra la imagen del QR
 st.sidebar.image("qrcode.png", caption="Escanea para donar vía PayPal", use_column_width=True)
