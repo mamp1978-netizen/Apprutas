@@ -305,48 +305,43 @@ def mostrar_profesional():
 # ... (código que sigue)
 
 
-# ... (Código anterior hasta la Sección 3.1: Listado de puntos con botones de selección)
+# ... (código anterior)
 
     # --- 3.2. BARRA DE HERRAMIENTAS COMPACTA DE ICONOS ---
     st.markdown(f"**Punto Activo:** {current_index + 1} de {len(pts)}")
     
-    # Usamos 4 columnas para los iconos de acción (Mover Arriba, Mover Abajo, Editar/Guardar, Borrar/Cancelar)
-    # y una columna vacía para empujar los iconos a la izquierda y mantener el espacio.
-    # CÓDIGO CORREGIDO: Cuatro columnas de igual tamaño [1, 1, 1, 1]
-    col_up, col_down, col_edit, col_del = st.columns(4) # Opcionalmente, puedes usar st.columns([1, 1, 1, 1])    
-    # Lógica de los botones de acción (depende del estado de edición y el índice)
+    # *** CAMBIO CLAVE: Usamos 4 columnas de igual tamaño para forzar la fila compacta en móvil ***
+    # Usamos st.columns(4) que es más compacto que [1, 1, 1, 1]
+    col_up, col_down, col_edit, col_del = st.columns(4)
+    
+    # Lógica de los botones de acción (solo se muestran si son activos)
     
     with col_up:
+        # Solo mostramos el botón si la condición de movimiento es válida Y no estamos editando
         if current_index > 0 and not is_editing:
-            # Icono para Mover Arriba
             st.button("⬆️", key="btn_up", on_click=_move_point, args=("up",), use_container_width=True, help="Mover punto seleccionado hacia arriba.")
-        else:
-            # Placeholder/Deshabilitado
-            st.button(" ", key="up_dis", use_container_width=True, disabled=True) 
             
     with col_down:
+        # Solo mostramos el botón si la condición de movimiento es válida Y no estamos editando
         if current_index < len(pts) - 1 and not is_editing:
-            # Icono para Mover Abajo
             st.button("⬇️", key="btn_down", on_click=_move_point, args=("down",), use_container_width=True, help="Mover punto seleccionado hacia abajo.")
-        else:
-            # Placeholder/Deshabilitado
-            st.button(" ", key="down_dis", use_container_width=True, disabled=True) 
             
     with col_edit:
         if is_editing:
-            # Icono para Guardar (cuando estamos editando)
+            # Icono para Guardar
             st.button("💾", key="btn_save", on_click=_save_point_from_toolbar, use_container_width=True, type="primary", help="Guardar el texto editado.")
         else:
-            # Icono para Editar (cuando no estamos editando)
+            # Icono para Editar
             st.button("✏️", key="btn_edit", on_click=_enter_edit_mode, use_container_width=True, help="Editar la dirección del punto seleccionado.")
             
     with col_del:
         if not is_editing:
-            # Icono para Borrar (cuando no estamos editando)
+            # Icono para Borrar
             st.button("🗑️", key="btn_delete", on_click=_delete_point, use_container_width=True, help="Eliminar el punto seleccionado.")
         else:
-            # Icono para Cancelar (cuando estamos editando)
+            # Icono para Cancelar
             st.button("❌", key="btn_cancel", on_click=_reset_point_selection, use_container_width=True, help="Cancelar la edición.")
+
 
     # --- 3.3. CAMPO DE EDICIÓN ---
 # ... (El resto del código se mantiene igual)
