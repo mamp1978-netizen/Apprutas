@@ -28,7 +28,7 @@ st.sidebar.info(
 # Archivo: photo_agent_app.py (Línea ~26)
 
 # ⭐️ CORRECCIÓN: La URL DEBE estar entre comillas.
-DONATION_URL = "https://www.paypal.com/donate/?business=73LFHKS2WCQ9U&no_recurring=0&item_name=Ayuda+para+desarrolladores&currency_code=EUR" 
+DONATION_URL = "https://www.paypal.com/donate/?business=73LFHKS2WCQ9U&no_recurring=0&item_name=Ayudar+a+desarrolladores&currency_code=EUR" 
 
 # ... (el resto del código sigue)
 # Muestra la imagen del QR
