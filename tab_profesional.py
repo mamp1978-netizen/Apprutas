@@ -273,7 +273,9 @@ def mostrar_profesional():
     current_index = st.session_state["selected_point_index"]
     is_editing = st.session_state["is_editing_point"]
 
-    # --- 3.1. LISTADO DE PUNTOS CON BOTONES DE SELECCIÓN ---
+# ... (código anterior)
+
+    # 3.1. LISTADO DE PUNTOS CON BOTONES DE SELECCIÓN
     st.markdown("---")
     
     for i, p in enumerate(pts):
@@ -281,8 +283,8 @@ def mostrar_profesional():
         prefix = "Origen" if i == 0 else ("Destino" if i == len(pts) - 1 else f"Parada #{i}:")
         display_text = f"**{prefix}** {p}"
         
-        # Dividimos en dos columnas: 1 para el botón de selección, 4 para el texto.
-        col_select, col_text = st.columns([0.8, 4])
+        # *** CAMBIO AQUÍ: Reducimos el ancho de la columna del botón de selección a 0.2 ***
+        col_select, col_text = st.columns([0.2, 4]) 
         
         is_selected = (i == current_index)
         
@@ -291,30 +293,16 @@ def mostrar_profesional():
             btn_label = "📍" if is_selected else "Elegir"
             btn_type = "primary" if is_selected else "secondary"
             
+            # Usamos un texto más corto en el botón "Elegir"
             st.button(
                 btn_label,
                 key=f"select_point_{i}",
                 on_click=_select_point,
                 args=(i,),
                 use_container_width=True,
-                type=btn_type,
-                help="Selecciona este punto para moverlo, editarlo o eliminarlo."
+                type=btn_type
             )
-            
-        with col_text:
-            # Mostramos el texto del punto con un fondo para el resaltado visual
-            bg_color = "#E6F7FF" if is_selected else "transparent"
-            
-            st.markdown(
-                f"""
-                <div style='background-color: {bg_color}; padding: 10px; border-radius: 5px;'>
-                    {display_text}
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-            
-    st.markdown("---")
+# ... (código que sigue)
 
 
 # ... (Código anterior hasta la Sección 3.1: Listado de puntos con botones de selección)
