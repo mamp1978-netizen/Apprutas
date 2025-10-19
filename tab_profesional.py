@@ -445,3 +445,26 @@ def mostrar_profesional():
 
         except Exception as e:
             st.error(f"Error al generar el QR: {e}")
+            # En el archivo tab_profesional.py, al final de la función mostrar_profesional()
+
+# ... (código anterior)
+
+    # 6. Botón de Donaciones
+    st.markdown("---")
+    st.markdown("<h3 style='text-align: center;'>🙏 ¿Te ha sido útil?</h3>", unsafe_allow_html=True)
+    
+    DONATION_URL = "URL_DE_TU_PLATAFORMA_DE_DONACIÓN_AQUÍ" 
+    
+    col_empty1, col_donation, col_empty2 = st.columns([1, 2, 1])
+
+    with col_donation:
+        st.markdown(
+            f"""
+            <a href="{DONATION_URL}" target="_blank">
+                <button style="background-color: #FF5733; color: white; padding: 15px 30px; border: none; border-radius: 8px; cursor: pointer; font-size: 18px; font-weight: bold; width: 100%;">
+                    Apoya el desarrollo (Invítame a un café)
+                </button>
+            </a>
+            """,
+            unsafe_allow_html=True
+        )
