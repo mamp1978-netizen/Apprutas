@@ -3,8 +3,8 @@ from app_utils import (
     suggest_addresses,
     resolve_selection, 
     build_gmaps_url,
-    build_waze_url,  # <-- NUEVA FUNCIÓN
-    build_apple_maps_url, # <-- NUEVA FUNCIÓN
+    build_waze_url, 
+    build_apple_maps_url, 
     make_qr,
     set_location_bias,
     _use_ip_bias 
@@ -19,31 +19,33 @@ def initialize_session_state():
     """Asegura que todas las claves necesarias existan en st.session_state."""
     if "prof_points" not in st.session_state:
         st.session_state["prof_points"] = []
-        
+    
+    # Nuevo estado para la selección en la lista y el modo de edición.
+    if "selected_point_index" not in st.session_state:
+        st.session_state["selected_point_index"] = 0 # El índice seleccionado para operar
+    if "is_editing_point" not in st.session_state:
+        st.session_state["is_editing_point"] = False # Bandera para mostrar/ocultar el input de edición
+    if "edit_input_value" not in st.session_state:
+        st.session_state["edit_input_value"] = "" # Valor del input de edición
+    
+    # ... (Resto de inicializaciones de input, suggestions, etc.)
     if "prof_text_input" not in st.session_state:
         st.session_state["prof_text_input"] = ""
     if "prof_top_suggestions" not in st.session_state:
         st.session_state["prof_top_suggestions"] = []
     if "prof_selection" not in st.session_state:
         st.session_state["prof_selection"] = ""
-        
     if "prof_last_route_url" not in st.session_state:
         st.session_state["prof_last_route_url"] = None
-
     if "prof_use_loc_cb" not in st.session_state:
         st.session_state["prof_use_loc_cb"] = False
-
     if "_loc_bias" not in st.session_state:
         st.session_state["_loc_bias"] = None
-        
     if "prof_mode" not in st.session_state:
         st.session_state["prof_mode"] = "Más rápido"
     if "prof_avoid" not in st.session_state:
         st.session_state["prof_avoid"] = "Ninguno"
         
-    if "edit_index" not in st.session_state: # <-- NUEVA CLAVE DE ESTADO
-        st.session_state["edit_index"] = None
-
 
 # -------------------------------
 # FUNCIONES DE MANEJO DE ESTADO Y LÓGICA
@@ -53,10 +55,21 @@ def _force_rerun_with_clear():
     """Fuerza el re-renderizado."""
     st.rerun()
 
+def _reset_point_selection():
+    """Reinicia el estado de selección/edición al añadir/limpiar/eliminar un punto."""
+    st.session_state["is_editing_point"] = False
+    st.session_state["edit_input_value"] = ""
+    # Intentamos mantener el selected_point_index en un valor válido
+    if st.session_state["prof_points"]:
+        st.session_state["selected_point_index"] = max(0, min(st.session_state["selected_point_index"], len(st.session_state["prof_points"]) - 1))
+    else:
+        st.session_state["selected_point_index"] = 0
+    _force_rerun_with_clear()
+
 
 def _add_point_from_ui():
     """Añade la dirección seleccionada/escrita a la lista y limpia la barra."""
-    
+    # ... (lógica de añadir punto) ...
     value = ""
     if st.session_state.get("prof_top_suggestions"):
         value = st.session_state.get("prof_selection")
@@ -76,23 +89,71 @@ def _add_point_from_ui():
     st.session_state["prof_top_suggestions"] = []
     st.session_state["prof_selection"] = ""
     
-    _force_rerun_with_clear()
+    # Selecciona el nuevo punto y reinicia el modo edición
+    st.session_state["selected_point_index"] = len(st.session_state["prof_points"]) - 1
+    _reset_point_selection() # Force rerun is inside this function
     
 
 def _clear_points():
     """Limpia la lista de puntos y el estado de la ruta."""
     st.session_state["prof_points"] = []
     st.session_state["prof_last_route_url"] = None
-    st.session_state["edit_index"] = None # Limpiar estado de edición
-
     st.session_state["prof_text_input"] = ""
     st.session_state["prof_top_suggestions"] = []
     st.session_state["prof_selection"] = ""
+    st.session_state["selected_point_index"] = 0
+    st.session_state["is_editing_point"] = False
+    st.session_state["edit_input_value"] = ""
 
     _force_rerun_with_clear() 
 
+# --- FUNCIONES DE MANEJO DE LA BARRA DE HERRAMIENTAS ---
+
+def _move_point(direction: str):
+    """Mueve el punto seleccionado arriba o abajo."""
+    i = st.session_state["selected_point_index"]
+    pts = st.session_state["prof_points"]
+    
+    if direction == "up" and i > 0:
+        pts.insert(i-1, pts.pop(i))
+        st.session_state["selected_point_index"] = i - 1
+    elif direction == "down" and i < len(pts) - 1:
+        pts.insert(i+1, pts.pop(i))
+        st.session_state["selected_point_index"] = i + 1
+        
+    _reset_point_selection() # Force rerun is inside this function
+
+def _delete_point():
+    """Elimina el punto seleccionado."""
+    i = st.session_state["selected_point_index"]
+    if 0 <= i < len(st.session_state["prof_points"]):
+        st.session_state["prof_points"].pop(i)
+    _reset_point_selection()
+
+def _enter_edit_mode():
+    """Entra en modo edición, cargando el valor del punto seleccionado."""
+    i = st.session_state["selected_point_index"]
+    if 0 <= i < len(st.session_state["prof_points"]):
+        st.session_state["is_editing_point"] = True
+        st.session_state["edit_input_value"] = st.session_state["prof_points"][i]
+    _force_rerun_with_clear()
+    
+def _save_point_from_toolbar():
+    """Guarda el valor editado."""
+    i = st.session_state["selected_point_index"]
+    new_value = st.session_state["edit_input_value"].strip()
+    
+    if new_value and len(new_value) >= 3:
+        st.session_state["prof_points"][i] = new_value
+        st.success(f"Punto actualizado a: {new_value}")
+        _reset_point_selection()
+    else:
+        st.warning("La dirección no puede estar vacía y debe tener al menos 3 letras.")
+
+
 def _run_search():
     """Ejecuta la búsqueda de sugerencias (se llama on_change en el input)."""
+    # ... (lógica de búsqueda de sugerencias) ...
     term = st.session_state.get("prof_text_input", "").strip()
     
     if len(term) >= 3:
@@ -109,40 +170,12 @@ def _run_search():
         st.session_state["prof_selection"] = ""
 
 
-# --- FUNCIONES PARA LA EDICIÓN DE PUNTOS ---
-def _set_edit_mode(index):
-    """Establece el índice a editar y carga el valor actual."""
-    st.session_state["edit_index"] = index
-    # Cargamos el valor actual del punto en la key del input temporal
-    st.session_state[f"edit_text_input_{index}"] = st.session_state["prof_points"][index]
-    st.rerun()
-
-def _save_point(index):
-    """Guarda la nueva dirección del punto editado y sale del modo de edición."""
-    # Obtenemos el valor del input temporal creado en el bucle
-    new_value = st.session_state.get(f"edit_text_input_{index}", "").strip()
-    
-    if new_value and len(new_value) >= 3:
-        # 1. Actualiza el punto
-        st.session_state["prof_points"][index] = new_value
-        # 2. Sale del modo de edición
-        st.session_state["edit_index"] = None
-        st.success(f"Punto actualizado a: {new_value}")
-        
-        # Eliminamos el input temporal y forzamos re-run
-        if f"edit_text_input_{index}" in st.session_state:
-            del st.session_state[f"edit_text_input_{index}"]
-        _force_rerun_with_clear()
-    else:
-        st.warning("La dirección no puede estar vacía y debe tener al menos 3 letras.")
-        # No salimos del modo de edición para que el usuario pueda corregir
-
-
 # -------------------------------
-# Componente de búsqueda y lógica de ubicación
+# Componente de búsqueda y lógica de ubicación (Sin cambios)
 # -------------------------------
 
 def _search_box():
+    # ... (código de _search_box sin cambios) ...
     st.markdown("---")
     
     # 1. ENTRADA DE TEXTO
@@ -220,73 +253,78 @@ def mostrar_profesional():
     # 2. Barra de búsqueda
     _search_box()
 
-    # 3. Lista de puntos (Origen, Destino, Paradas)
+    # 3. Lista de puntos y herramientas (Layout compacto)
     pts = st.session_state["prof_points"] 
-    
     st.subheader("Puntos de la ruta (orden de viaje)")
     
     if not pts:
         st.info("Agregue al menos dos puntos (origen y destino) para generar la ruta.")
-    
-    point_list_container = st.container() 
+        return # Salir si no hay puntos
 
-    with point_list_container:
-        edit_index = st.session_state.get("edit_index") # Obtener el índice que se está editando
+    # 3.1. SELECCIÓN DE PUNTO CON FORMATO
+    options_formatted = []
+    for i, p in enumerate(pts):
+        prefix = "Origen" if i == 0 else ("Destino" if i == len(pts) - 1 else f"Parada #{i}:")
+        options_formatted.append(f"{i}. {prefix} {p}")
         
-        for i, p in enumerate(pts):
-            # Aumentamos las columnas para el botón de edición
-            col1, col2, col3, col4, col5 = st.columns([0.08, 0.08, 0.1, 0.64, 0.1])
+    st.selectbox(
+        "Selecciona el punto a modificar:",
+        options=options_formatted,
+        index=st.session_state["selected_point_index"],
+        key="selected_point_index",
+        label_visibility="visible",
+        format_func=lambda x: x.split(". ", 1)[1] # Muestra solo la dirección y el prefijo
+    )
+    
+    current_index = st.session_state["selected_point_index"]
+    is_editing = st.session_state["is_editing_point"]
+    
+    # 3.2. BARRA DE HERRAMIENTAS COMPACTA
+    col_up, col_down, col_edit, col_del, _ = st.columns([1, 1, 1, 1, 3])
+    
+    with col_up:
+        if current_index > 0 and not is_editing:
+            st.button("⬆️ Mover Arriba", on_click=_move_point, args=("up",), use_container_width=True)
+        else:
+            st.button(" ", use_container_width=True, disabled=True) # Placeholder
             
-            # --- Botones de Movimiento ---
-            with col1:
-                if i > 0: 
-                    if st.button("⬆️", key=f"up_{i}", help="Mover arriba", use_container_width=True):
-                        pts.insert(i-1, pts.pop(i))
-                        _force_rerun_with_clear() 
-            with col2:
-                if i < len(pts) - 1: 
-                    if st.button("⬇️", key=f"down_{i}", help="Mover abajo", use_container_width=True):
-                        pts.insert(i+1, pts.pop(i))
-                        _force_rerun_with_clear()
-
-            # --- Columna de Edición ---
-            with col3:
-                if edit_index == i:
-                    # Si estamos editando, mostramos el botón GUARDAR
-                    st.button("💾", key=f"save_{i}", help="Guardar cambios", on_click=_save_point, args=(i,), use_container_width=True, type="primary")
-                else:
-                    # Si NO estamos editando, mostramos el botón EDITAR
-                    st.button("✏️", key=f"edit_{i}", help="Editar punto", on_click=_set_edit_mode, args=(i,), use_container_width=True)
-
-
-            # --- Columna de Texto/Input ---
-            with col4:
-                prefix = "Origen" if i == 0 else ("Destino" if i == len(pts) - 1 else f"Parada #{i}:")
-                
-                if edit_index == i:
-                    # Mostramos el input de texto editable
-                    # Usamos el key creado en _set_edit_mode para el valor
-                    st.text_input(
-                        prefix, 
-                        key=f"edit_text_input_{i}", 
-                        label_visibility="visible"
-                    )
-                else:
-                    # Mostramos la etiqueta estática
-                    st.markdown(f"**{prefix}**: {p}")
+    with col_down:
+        if current_index < len(pts) - 1 and not is_editing:
+            st.button("⬇️ Mover Abajo", on_click=_move_point, args=("down",), use_container_width=True)
+        else:
+            st.button(" ", use_container_width=True, disabled=True) # Placeholder
             
-            # --- Botón Eliminar ---
-            with col5:
-                if st.button("🗑️", key=f"del_{i}", help="Eliminar punto", use_container_width=True):
-                    # Si eliminamos un punto, salimos del modo de edición
-                    st.session_state["edit_index"] = None
-                    pts.pop(i)
-                    _force_rerun_with_clear()
-                
+    with col_edit:
+        if is_editing:
+            st.button("💾 Guardar", on_click=_save_point_from_toolbar, use_container_width=True, type="primary")
+        else:
+            st.button("✏️ Editar", on_click=_enter_edit_mode, use_container_width=True)
+            
+    with col_del:
+        if not is_editing:
+            st.button("🗑️ Borrar", on_click=_delete_point, use_container_width=True)
+        else:
+            # Si estamos editando, mostramos un botón para cancelar
+            st.button("❌ Cancelar", on_click=_reset_point_selection, use_container_width=True)
+
+
+    # 3.3. CAMPO DE EDICIÓN
+    if is_editing:
+        st.text_input(
+            "Modificar la dirección seleccionada:",
+            value=st.session_state["edit_input_value"],
+            key="edit_input_value",
+            label_visibility="visible",
+            on_change=_save_point_from_toolbar # Guardar al presionar ENTER
+        )
+        st.markdown("---") # Separador para el modo edición
+
+
     # 4. Botón Generar Ruta
     st.markdown("---")
     
     if st.button("Generar ruta profesional", type="primary", key="prof_generate_btn"):
+        # ... (lógica de generación de URL) ...
         if len(pts) < 2:
             st.warning("Deben haber dos o más puntos (origen y destino).")
             return 
@@ -311,7 +349,6 @@ def mostrar_profesional():
             "Ninguno": None
         }
         
-        # Google Maps (la más completa y que se usa para QR)
         gmaps_url = build_gmaps_url(
             origin=origen_meta["address"],
             destination=destino_meta["address"],
@@ -321,10 +358,7 @@ def mostrar_profesional():
             optimize=True 
         )
         
-        # Waze
         waze_url = build_waze_url(origen_meta["address"], destino_meta["address"], waypoints_resolved)
-        
-        # Apple Maps
         apple_url = build_apple_maps_url(origen_meta["address"], destino_meta["address"], waypoints_resolved)
         
         # --- 4.3 Mostrar Resultados ---
@@ -332,15 +366,14 @@ def mostrar_profesional():
         
         st.success("¡Ruta generada correctamente! 👇")
         
-        # Mostrar enlaces de navegación en columnas
         col_gmaps, col_waze, col_apple = st.columns([1, 1, 1])
         
         with col_gmaps:
-            st.write(f"[🗺️ Google Maps]({gmaps_url})")
+            st.markdown(f"**[🗺️ Google Maps]({gmaps_url})**")
         with col_waze:
-            st.write(f"[🚗 Waze]({waze_url})")
+            st.markdown(f"**[🚗 Waze]({waze_url})**")
         with col_apple:
-            st.write(f"[🍎 Apple Maps]({apple_url})")
+            st.markdown(f"**[🍎 Apple Maps]({apple_url})**")
 
 
     # 5. Visualización del QR (si hay ruta generada)
@@ -357,7 +390,7 @@ def mostrar_profesional():
                 st.image(qr_bytes, caption="Escanea para abrir la ruta", use_container_width=True) 
             
             with col_info:
-                st.info("Escanee el código QR con su teléfono para abrir la ruta en la aplicación de Google Maps de forma inmediata.")
+                st.info("Escanee el código QR con su teléfono para abrir la ruta en la aplicación de Google Maps de forma inmediata. Se han generado enlaces alternativos para Waze y Apple Maps.")
 
         except Exception as e:
             st.error(f"Error al generar el QR: {e}")
