@@ -1,22 +1,29 @@
-# Configuración global para Streamlit Cloud
-[browser]
-# Desactiva la recolección de estadísticas de uso
-gatherUsageStats = false 
+# ... otras configuraciones ...
 
 [global]
-# CRÍTICO: Deshabilita el menú principal de tres puntos, lo que oculta 'Share', 'Settings' 
-# y la opción de 'View source file' (Ver código fuente).
 showSidebarNavigation = false 
 
 [client]
-# Deshabilita el indicador de 'Rerunning' / 'Running' en la esquina inferior derecha 
-# y el botón negro de 'Administrar la aplicación'.
 displayEnabled = false 
 
-[theme]
-# Puedes personalizar el aspecto de la aplicación aquí (opcional)
-primaryColor = "#4f46e5"
-backgroundColor = "white"
-secondaryBackgroundColor = "#f6f7fb"
-textColor = "#111827"
-font = "sans serif"
+# ... otras configuraciones ...
+```
+
+### 3. Forzar el Push y el Despliegue (Si no se ha subido)
+
+Si el `git push` anterior falló, la configuración nunca llegó a Streamlit Cloud. Ejecuta estos comandos una última vez en la terminal de Codespaces:
+
+1.  **Añadir el archivo modificado:**
+    ```bash
+    git add .streamlit/config.toml
+    ```
+
+2.  **Confirma los cambios (Commit):**
+    ```bash
+    git commit -m "feat: Forzar ocultación final de botones de administración"
+    ```
+
+3.  **Sube los cambios a GitHub (Push):**
+    ```bash
+    git push
+    
