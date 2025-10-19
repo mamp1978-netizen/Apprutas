@@ -20,7 +20,6 @@ def initialize_session_state():
     if "prof_points" not in st.session_state:
         st.session_state["prof_points"] = []
     
-    # Estado para la selección del punto y el modo de edición.
     if "selected_point_index" not in st.session_state:
         st.session_state["selected_point_index"] = 0 
     if "is_editing_point" not in st.session_state:
@@ -28,7 +27,6 @@ def initialize_session_state():
     if "edit_input_value" not in st.session_state:
         st.session_state["edit_input_value"] = "" 
     
-    # ... (Resto de inicializaciones)
     if "prof_text_input" not in st.session_state:
         st.session_state["prof_text_input"] = ""
     if "prof_top_suggestions" not in st.session_state:
@@ -59,7 +57,6 @@ def _reset_point_selection():
     """Reinicia el estado de selección/edición al añadir/limpiar/eliminar un punto."""
     st.session_state["is_editing_point"] = False
     st.session_state["edit_input_value"] = ""
-    # Mantiene el índice en un valor válido o 0
     if st.session_state["prof_points"]:
         st.session_state["selected_point_index"] = max(0, min(st.session_state["selected_point_index"], len(st.session_state["prof_points"]) - 1))
     else:
@@ -69,7 +66,6 @@ def _reset_point_selection():
 def _add_point_from_ui():
     """Añade la dirección seleccionada/escrita a la lista y limpia la barra."""
     value = ""
-    # Prioriza la selección sobre el texto escrito si hay sugerencias
     if st.session_state.get("prof_top_suggestions"):
         value = st.session_state.get("prof_selection")
     else:
@@ -88,9 +84,8 @@ def _add_point_from_ui():
     st.session_state["prof_top_suggestions"] = []
     st.session_state["prof_selection"] = ""
     
-    # Selecciona el nuevo punto y reinicia el modo edición
     st.session_state["selected_point_index"] = len(st.session_state["prof_points"]) - 1
-    _reset_point_selection() # Force rerun is inside this function
+    _reset_point_selection()
     
 
 def _clear_points():
@@ -111,7 +106,6 @@ def _clear_points():
 def _select_point(index: int):
     """Establece el índice seleccionado para la edición/movimiento."""
     st.session_state["selected_point_index"] = index
-    # Al seleccionar, salimos del modo edición si estaba activo para enfocarnos en la acción
     if st.session_state["is_editing_point"]:
         _reset_point_selection()
     else:
@@ -129,7 +123,7 @@ def _move_point(direction: str):
         pts.insert(i+1, pts.pop(i))
         st.session_state["selected_point_index"] = i + 1
         
-    _reset_point_selection() # Force rerun is inside this function
+    _reset_point_selection()
 
 def _delete_point():
     """Elimina el punto seleccionado."""
@@ -164,7 +158,6 @@ def _run_search():
     term = st.session_state.get("prof_text_input", "").strip()
     
     if len(term) >= 3:
-        # Usa el key_bucket "prof_top" para las sugerencias
         suggestions = suggest_addresses(term, key_bucket="prof_top", min_len=3) 
         st.session_state["prof_top_suggestions"] = suggestions
         
@@ -197,6 +190,7 @@ def _search_box():
     # 2. SELECTBOX CON SUGERENCIAS
     suggestions = st.session_state.get("prof_top_suggestions", [])
     
+    # CORRECCIÓN: Solo renderiza el selectbox si hay sugerencias.
     if suggestions:
         st.selectbox(
             "Selecciona la sugerencia más precisa:",
@@ -220,7 +214,6 @@ def _search_box():
     with col_clear:
         st.button("Limpiar", on_click=_clear_points, key="prof_clear_btn", use_container_width=True)
 
-    # Lógica de ubicación
     with col_loc:
         is_loc_active = st.checkbox(
             "📍 Usar mi ubicación", 
@@ -243,15 +236,12 @@ def _search_box():
 # -------------------------------
 # Función principal de la pestaña (IMPLEMENTA LISTA DE BOTONES)
 # -------------------------------
-# Archivo: tab_profesional.py
-
 def mostrar_profesional():
     
-    # ⭐️ VERIFICA: Esta es la primera línea de la función.
     initialize_session_state() 
 
     st.header("Ruta de trabajo")
-    # ...    
+    
     # 1. Opciones de ruta (Tipo y Evitar)
     col_mode, col_avoid = st.columns([1, 1])
     with col_mode:
@@ -274,13 +264,7 @@ def mostrar_profesional():
     current_index = st.session_state["selected_point_index"]
     is_editing = st.session_state["is_editing_point"]
 
-# Archivo: tab_profesional.py (Línea ~190)
-
-# Archivo: tab_profesional.py
-
-# ... (código anterior hasta la sección 3.1)
-
-# 3.1. LISTADO DE PUNTOS CON DESCRIPCIONES Y BOTONES
+# 3.1. LISTADO DE PUNTOS CON DESCRIPCIONES Y BOTONES (Optimizados para móvil)
     st.markdown("---")
     
     for i, p in enumerate(pts):
@@ -288,13 +272,12 @@ def mostrar_profesional():
         prefix = "Origen" if i == 0 else ("Destino" if i == len(pts) - 1 else f"Parada #{i}:")
         display_text = f"**{prefix}** {p}"
         
-        # ⭐️ CORRECCIÓN 1: Ajuste de columnas. [0.5] para el botón de selección, [4] para el texto.
+        # Ajuste de columnas para que el botón de selección sea compacto
         col_select, col_text = st.columns([0.5, 4]) 
         
         is_selected = (i == current_index)
         
         with col_select:
-            # Botón de selección para establecer el índice. Usamos un icono compacto.
             btn_label = "📍" if is_selected else " " 
             btn_type = "primary" if is_selected else "secondary"
             
@@ -309,7 +292,6 @@ def mostrar_profesional():
             )
             
         with col_text:
-            # Renderiza la dirección y la etiqueta
             bg_color = "#E6F7FF" if is_selected else "transparent"
             
             st.markdown(
@@ -326,10 +308,7 @@ def mostrar_profesional():
 # --- 3.2. BARRA DE HERRAMIENTAS COMPACTA DE ICONOS ---
     st.markdown(f"**Punto Activo:** {current_index + 1} de {len(pts)}")
     
-    # ⭐️ CORRECCIÓN 2: Usar 4 columnas de igual tamaño (4) es más robusto en móvil.
     col_up, col_down, col_edit, col_del = st.columns(4) 
-# ... (el resto de la sección 3.2 está bien)    
-    # Lógica de los botones de acción (solo se muestran si son activos)
     
     with col_up:
         if current_index > 0 and not is_editing:
@@ -351,7 +330,8 @@ def mostrar_profesional():
         else:
             st.button("❌", key="btn_cancel", on_click=_reset_point_selection, use_container_width=True, help="Cancelar la edición.")
 
-    # --- 3.3. CAMPO DE EDICIÓN ---
+
+# --- 3.3. CAMPO DE EDICIÓN ---
     if is_editing:
         st.text_input(
             f"Modificar punto seleccionado (Índice {current_index + 1}):",
@@ -418,21 +398,4 @@ def mostrar_profesional():
             st.markdown(f"**[🍎 Apple Maps]({apple_url})**")
 
 
-    # 5. Visualización del QR (si hay ruta generada)
-    if st.session_state.prof_last_route_url:
-        st.markdown("---")
-        st.subheader("Última ruta generada (QR)")
-        
-        try:
-            qr_bytes = make_qr(st.session_state.prof_last_route_url)
-            
-            col_qr, col_info = st.columns([1, 3])
-            
-            with col_qr:
-                st.image(qr_bytes, caption="Escanea para abrir la ruta", use_container_width=True) 
-            
-            with col_info:
-                st.info("Escanee el código QR con su teléfono para abrir la ruta en la aplicación de Google Maps de forma inmediata. Se han generado enlaces alternativos para Waze y Apple Maps.")
-
-        except Exception as e:
-            st.error(f"Error al generar el QR: {e}")
+    # ❌ SECCIÓN 5 ELIMINADA: Ya no se muestra el QR en la pestaña.
