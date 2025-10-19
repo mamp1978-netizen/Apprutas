@@ -261,20 +261,26 @@ def mostrar_profesional():
         st.info("Agregue al menos dos puntos (origen y destino) para generar la ruta.")
         return # Salir si no hay puntos
 
-    # 3.1. SELECCIÓN DE PUNTO CON FORMATO
+    # 3.1. SELECCIÓN DE PUNTO CON FORMATO CORREGIDO
     options_formatted = []
     for i, p in enumerate(pts):
         prefix = "Origen" if i == 0 else ("Destino" if i == len(pts) - 1 else f"Parada #{i}:")
+        # Aquí creamos la cadena completa que queremos que se vea
         options_formatted.append(f"{i}. {prefix} {p}")
         
-    st.selectbox(
+    # --- CORRECCIÓN CLAVE: Pasamos las opciones formateadas y usamos el índice como valor ---
+    # Ya no necesitamos el format_func, ya que options_formatted ya contiene el texto que queremos.
+    selected_option_index = st.selectbox(
         "Selecciona el punto a modificar:",
-        options=options_formatted,
+        options=options_formatted, # Pasamos la lista de strings completos
         index=st.session_state["selected_point_index"],
-        key="selected_point_index",
-        label_visibility="visible",
-        format_func=lambda x: x.split(". ", 1)[1] # Muestra solo la dirección y el prefijo
+        key="selected_point_index_ui", # Usamos una clave de UI diferente para evitar conflictos de estado
+        label_visibility="visible"
     )
+    
+    # Después del selectbox, actualizamos el índice de estado de sesión para el resto de la lógica
+    # El valor devuelto por el selectbox (selected_option_index) es el índice de la opción seleccionada.
+    st.session_state["selected_point_index"] = selected_option_index
     
     current_index = st.session_state["selected_point_index"]
     is_editing = st.session_state["is_editing_point"]
