@@ -5,11 +5,10 @@ from app_utils import (
     build_gmaps_url,
     build_waze_url, 
     build_apple_maps_url, 
-    make_qr,
     set_location_bias,
     _use_ip_bias 
 )
-from io import BytesIO
+# from io import BytesIO
 
 # -------------------------------
 # INICIALIZACIÓN DEL ESTADO DE SESIÓN (CRUCIAL)
@@ -17,6 +16,7 @@ from io import BytesIO
 
 def initialize_session_state():
     """Asegura que todas las claves necesarias existan en st.session_state."""
+    # Si alguna de estas claves falta, la aplicación falla con KeyError.
     if "prof_points" not in st.session_state:
         st.session_state["prof_points"] = []
     
@@ -66,6 +66,7 @@ def _reset_point_selection():
 def _add_point_from_ui():
     """Añade la dirección seleccionada/escrita a la lista y limpia la barra."""
     value = ""
+    # Si hay sugerencias, usa la seleccionada; si no, usa el texto de entrada
     if st.session_state.get("prof_top_suggestions"):
         value = st.session_state.get("prof_selection")
     else:
@@ -157,8 +158,11 @@ def _run_search():
     """Ejecuta la búsqueda de sugerencias (se llama on_change en el input)."""
     term = st.session_state.get("prof_text_input", "").strip()
     
+    # Obtenemos el sesgo de ubicación si está activo
+    bias = set_location_bias()
+    
     if len(term) >= 3:
-        suggestions = suggest_addresses(term, key_bucket="prof_top", min_len=3) 
+        suggestions = suggest_addresses(term, key_bucket="prof_top", min_len=3, bias=bias) 
         st.session_state["prof_top_suggestions"] = suggestions
         
         if not suggestions:
@@ -190,7 +194,7 @@ def _search_box():
     # 2. SELECTBOX CON SUGERENCIAS
     suggestions = st.session_state.get("prof_top_suggestions", [])
     
-    # CORRECCIÓN: Solo renderiza el selectbox si hay sugerencias.
+    # CORRECCIÓN: Solo renderiza el selectbox si hay sugerencias para evitar el error.
     if suggestions:
         st.selectbox(
             "Selecciona la sugerencia más precisa:",
@@ -215,6 +219,7 @@ def _search_box():
         st.button("Limpiar", on_click=_clear_points, key="prof_clear_btn", use_container_width=True)
 
     with col_loc:
+        # Aseguramos que la caja de ubicación mantenga su estado
         is_loc_active = st.checkbox(
             "📍 Usar mi ubicación", 
             key="prof_use_loc_cb", 
@@ -222,22 +227,24 @@ def _search_box():
             help="Si está activado, la búsqueda se sesga a tu ubicación IP."
         )
         
+        # Lógica para activar/desactivar el sesgo de ubicación
         if is_loc_active:
              if st.session_state.get("_loc_bias") is None:
                  _use_ip_bias()
-                 _force_rerun_with_clear()
+                 _force_rerun_with_clear() # Forzar rerun para cargar el bias
         else:
              if st.session_state.get("_loc_bias") is not None:
                  del st.session_state["_loc_bias"]
-                 _force_rerun_with_clear()
+                 _force_rerun_with_clear() # Forzar rerun para eliminar el bias
                  
     st.markdown("---")
 
 # -------------------------------
-# Función principal de la pestaña (IMPLEMENTA LISTA DE BOTONES)
+# Función principal de la pestaña
 # -------------------------------
 def mostrar_profesional():
     
+    # ⭐️ CORRECCIÓN CRÍTICA: La llamada DEBE ir aquí para evitar NameError/KeyError.
     initialize_session_state() 
 
     st.header("Ruta de trabajo")
@@ -272,7 +279,7 @@ def mostrar_profesional():
         prefix = "Origen" if i == 0 else ("Destino" if i == len(pts) - 1 else f"Parada #{i}:")
         display_text = f"**{prefix}** {p}"
         
-        # Ajuste de columnas para que el botón de selección sea compacto
+        # CORRECCIÓN DE DISEÑO MÓVIL: Ajuste de columnas para el botón compacto
         col_select, col_text = st.columns([0.5, 4]) 
         
         is_selected = (i == current_index)
@@ -308,6 +315,7 @@ def mostrar_profesional():
 # --- 3.2. BARRA DE HERRAMIENTAS COMPACTA DE ICONOS ---
     st.markdown(f"**Punto Activo:** {current_index + 1} de {len(pts)}")
     
+    # CORRECCIÓN DE DISEÑO MÓVIL: 4 columnas de igual tamaño
     col_up, col_down, col_edit, col_del = st.columns(4) 
     
     with col_up:
@@ -352,10 +360,17 @@ def mostrar_profesional():
             return 
         
         # --- 4.1 Resolución de Puntos ---
+        # Si la clave API no se cargó, advertimos
+        from app_utils import gmaps
+        if gmaps is None:
+            st.error("ERROR CRÍTICO: No se pudo conectar con la API de Google Maps. Revisa tu clave en secrets.toml.")
+            return
+
         origen_label = pts[0]
         destino_label = pts[-1]
         waypoints_labels = pts[1:-1]
         
+        # Resolvemos las etiquetas a direcciones formateadas
         origen_meta = resolve_selection(origen_label, "prof_top")
         destino_meta = resolve_selection(destino_label, "prof_top")
         
@@ -396,6 +411,3 @@ def mostrar_profesional():
             st.markdown(f"**[🚗 Waze]({waze_url})**")
         with col_apple:
             st.markdown(f"**[🍎 Apple Maps]({apple_url})**")
-
-
-    # ❌ SECCIÓN 5 ELIMINADA: Ya no se muestra el QR en la pestaña.

@@ -22,10 +22,8 @@ st.sidebar.info(
     "Considera una pequeña donación para ayudarme a mantener y mejorar la aplicación."
 )
 
+# CORRECCIÓN DE SINTAXIS: La URL está correctamente encapsulada.
 DONATION_URL = "https://www.paypal.com/donate/?business=73LFHKS2WCQ9U&no_recurring=0&item_name=Ayuda+para+desarrolladores&currency_code=EUR" 
-
-# ❌ LÍNEA ELIMINADA: Ya no se carga la imagen del QR.
-# st.sidebar.image("qrcode.png", caption="Escanea para donar vía PayPal", use_column_width=True)
 
 # Muestra el botón de enlace directo
 st.sidebar.markdown(
