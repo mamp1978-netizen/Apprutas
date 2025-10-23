@@ -1,4 +1,4 @@
-import streamlit as st # Necesario para usar st.secrets
+import streamlit as st # Necesario para usar st.secrets, st.cache_data
 import googlemaps
 import os
 # from qrcode import make as make_qr_code 
@@ -16,7 +16,7 @@ gmaps = googlemaps.Client(key=API_KEY) if API_KEY else None
 
 # --- LÓGICA DE GEOLOCALIZACIÓN Y SUGERENCIAS ---
 
-# Asume que esta función existe en tu código, si no, es un placeholder para la lógica de sugestiones
+@st.cache_data(ttl=3600) # Caching: Los resultados de la sugerencia se guardan por 1 hora.
 def suggest_addresses(address_term, key_bucket, min_len=3, bias=None):
     """
     Usa la API de Google Places Autocomplete para obtener sugerencias.
@@ -42,6 +42,7 @@ def suggest_addresses(address_term, key_bucket, min_len=3, bias=None):
         # warnings.warn(f"Error en Google Places Autocomplete: {e}")
         return []
 
+@st.cache_data(ttl=3600 * 24) # Caching: Las coordenadas geocodificadas se guardan por 24 horas.
 def resolve_selection(address_label, key_bucket):
     """
     Usa la API de Geocoding para obtener la lat/lng de la dirección seleccionada.
@@ -106,7 +107,13 @@ def build_gmaps_url(origin, destination, waypoints=None, mode="driving", avoid=N
         waypoints_str = '|'.join([quote(wp) for wp in waypoints])
         params['waypoints'] = waypoints_str
         if optimize:
-            params['dir_action'] = 'navigate' # A veces optimiza, otras no, pero es la mejor práctica
+            # Aquí es donde se solicita la optimización.
+            # Google Maps lo hace de forma automática para rutas de Directions API, 
+            # pero en la URL, el parámetro 'optimize:true' se usa en la API Directions.
+            # Para URL, la mejor práctica es pasar los waypoints como 'waypoints' 
+            # y la optimización la hace Google automáticamente si se detecta un conjunto de waypoints.
+            # Eliminamos el parámetro 'dir_action' que no es estándar para optimización aquí.
+            pass
             
     if avoid:
         params['avoid'] = avoid
