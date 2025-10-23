@@ -65,23 +65,6 @@ def _reset_point_selection():
     else:
         st.session_state["selected_point_index"] = 0
     _force_rerun_with_clear()
-    
-# --- FUNCIÓN DE CALLBACK PARA EL CHECKBOX DE UBICACIÓN ---
-def _toggle_location_bias():
-    """Maneja el cambio del checkbox de ubicación y fuerza el rerun."""
-    is_active = st.session_state["prof_use_loc_cb"]
-    
-    if is_active:
-        if st.session_state.get("_loc_bias") is None:
-            # Obtiene la ubicación y la guarda en st.session_state["_loc_bias"]
-            _use_ip_bias()
-    else:
-        if st.session_state.get("_loc_bias") is not None:
-            del st.session_state["_loc_bias"]
-            
-    # Forzar el rerun una vez al final del callback
-    st.rerun()
-
 
 def _add_point_from_ui():
     """Añade la dirección seleccionada/escrita a la lista y limpia la barra."""
@@ -255,16 +238,24 @@ def _search_box():
         st.button("Limpiar", on_click=_clear_points, key="prof_clear_btn", use_container_width=True)
 
     with col_loc:
-        # --- CAMBIO CLAVE: Usar el callback on_change en lugar de la lógica if/else ---
-        st.checkbox(
+        # --- REVERSIÓN DE LA LÓGICA CON st.rerun() (ELIMINANDO LA FUNCIÓN _toggle_location_bias) ---
+        is_loc_active = st.checkbox(
             "📍 Usar mi ubicación", 
             key="prof_use_loc_cb", 
-            # El valor lo determina la existencia de _loc_bias, no al revés
             value=st.session_state.get("_loc_bias") is not None,
-            help="Si está activado, la búsqueda se sesga a tu ubicación IP.",
-            on_change=_toggle_location_bias # <-- ¡NUEVA FUNCIÓN DE CALLBACK!
+            help="Si está activado, la búsqueda se sesga a tu ubicación IP."
         )
-        # Se elimina la lógica anterior de if/else y st.rerun()
+        
+        # Lógica para activar/desactivar el sesgo de ubicación (AHORA SIN EL PROBLEMA DE st.rerun EN EL CHECKBOX)
+        if is_loc_active:
+             if st.session_state.get("_loc_bias") is None:
+                 _use_ip_bias()
+                 # Nota: Aquí no forzamos el rerun en el mismo if/else para evitar el error de frontend
+        else:
+             if st.session_state.get("_loc_bias") is not None:
+                 del st.session_state["_loc_bias"]
+                 # Nota: Aquí tampoco forzamos el rerun
+        # El rerun ocurrirá en la siguiente pasada del script si se detecta un cambio de estado
 
     st.markdown("---")
 
