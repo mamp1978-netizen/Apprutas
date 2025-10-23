@@ -3,7 +3,6 @@ import streamlit as st
 # import warnings  
 
 # --- 1. IMPORTACIONES ---
-from tab_profesional import mostrar_profesional  
 # from tab_viajero import mostrar_viajero  
 # from tab_turistico import mostrar_turistico  
 
