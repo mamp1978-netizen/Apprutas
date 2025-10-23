@@ -1,11 +1,13 @@
+# photo_agent_app.py
 import streamlit as st
-# import warnings 
+from tab_profesional import mostrar_profesional   # <— import simple
 
-# --- 1. IMPORTACIONES ---
-from tab_profesional import mostrar_profesional 
-# from tab_viajero import mostrar_viajero 
-# from tab_turistico import mostrar_turistico 
+def main():
+    st.set_page_config(page_title="Planificador de Rutas", layout="wide")
+    mostrar_profesional()
 
+if __name__ == "__main__":
+    main()
 
 # --- 2. CONFIGURACIÓN DE PÁGINA Y BARRA LATERAL (DONACIONES) ---
 st.set_page_config(
