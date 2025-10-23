@@ -1,4 +1,3 @@
-# app_utils.py — versión limpia sin import circular
 import os
 from urllib.parse import quote_plus
 import typing as t
@@ -9,7 +8,6 @@ try:
 except Exception:
     googlemaps = None  # type: ignore
 
-# --- Clave API ---
 API_KEY = (
     st.secrets.get("GOOGLE_PLACES_API_KEY")
     or os.getenv("GOOGLE_PLACES_API_KEY")
@@ -25,7 +23,6 @@ if googlemaps and API_KEY:
         gmaps = None
 
 
-# --- Funciones auxiliares ---
 def _addr_from_any(x) -> t.Optional[str]:
     if x is None:
         return None
@@ -36,35 +33,26 @@ def _addr_from_any(x) -> t.Optional[str]:
         addr = x.get("address") or x.get("formatted_address")
         if isinstance(addr, str) and addr.strip():
             return addr.strip()
-        lat = x.get("lat")
-        lng = x.get("lng")
+        lat = x.get("lat"); lng = x.get("lng")
         if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
             return f"{lat},{lng}"
-        latlng = (
-            x.get("latlng")
-            or x.get("location")
-            or x.get("geometry", {}).get("location")
-        )
+        latlng = (x.get("latlng") or x.get("location") or x.get("geometry", {}).get("location"))
         if isinstance(latlng, dict):
-            lat = latlng.get("lat")
-            lng = latlng.get("lng")
+            lat = latlng.get("lat"); lng = latlng.get("lng")
             if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
                 return f"{lat},{lng}"
     return None
 
 
 def suggest_addresses(term: str, min_len: int = 3, max_results: int = 8) -> list[dict]:
-    """Autocomplete básico con Google Places."""
     if not term or len(term.strip()) < min_len or gmaps is None:
         return []
     try:
         resp = gmaps.places_autocomplete(input_text=term, types="geocode") or []
         return [
-            {
-                "description": r.get("description", ""),
-                "place_id": r.get("place_id", ""),
-                "types": r.get("types", []),
-            }
+            {"description": r.get("description", ""),
+             "place_id": r.get("place_id", ""),
+             "types": r.get("types", [])}
             for r in resp[:max_results]
         ]
     except Exception:
@@ -89,42 +77,32 @@ def resolve_selection(term: str, place_id: str | None = None) -> dict:
 
 
 def build_gmaps_url(origin, destination, waypoints=None, mode="driving", avoid=None, optimize=True):
-    o = _addr_from_any(origin)
-    d = _addr_from_any(destination)
+    o = _addr_from_any(origin); d = _addr_from_any(destination)
     if not o or not d:
         return None
-
     parts = [
         "https://www.google.com/maps/dir/?api=1",
         f"origin={quote_plus(o)}",
         f"destination={quote_plus(d)}",
         f"travelmode={quote_plus((mode or 'driving').lower())}",
     ]
-
     if avoid:
-        vals = [
-            a.strip().lower()
-            for a in (avoid.split(",") if isinstance(avoid, str) else avoid)
-            if str(a).strip()
-        ]
+        vals = [a.strip().lower() for a in (avoid.split(",") if isinstance(avoid, str) else avoid) if str(a).strip()]
         allowed = {"tolls", "highways", "ferries", "indoor"}
         vals = [a for a in vals if a in allowed]
         if vals:
             parts.append(f"avoid={quote_plus(','.join(vals))}")
-
     if waypoints:
         if not isinstance(waypoints, (list, tuple)):
             waypoints = [waypoints]
         wp = [quote_plus(s) for s in (_addr_from_any(w) for w in waypoints) if s]
         if wp:
             parts.append(f"waypoints={('optimize:true|' if optimize else '') + '|'.join(wp)}")
-
     return "&".join(parts)
 
 
 def build_waze_url(origin=None, destination=None):
-    o = _addr_from_any(origin)
-    d = _addr_from_any(destination)
+    o = _addr_from_any(origin); d = _addr_from_any(destination)
     if not d:
         return None
     if o:
@@ -133,8 +111,7 @@ def build_waze_url(origin=None, destination=None):
 
 
 def build_apple_maps_url(origin=None, destination=None):
-    o = _addr_from_any(origin)
-    d = _addr_from_any(destination)
+    o = _addr_from_any(origin); d = _addr_from_any(destination)
     if not d:
         return None
     parts = ["http://maps.apple.com/?dirflg=d"]
