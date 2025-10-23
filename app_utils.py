@@ -1,162 +1,65 @@
-import streamlit as st # Necesario para usar st.secrets, st.cache_data
-import googlemaps
-import os
-# from qrcode import make as make_qr_code 
-from io import BytesIO
-from urllib.parse import quote
-# import warnings 
-import requests 
+import streamlit as st
+# import warnings  
+
+# --- 1. IMPORTACIONES ---
+from tab_profesional import mostrar_profesional  
+# from tab_viajero import mostrar_viajero  
+# from tab_turistico import mostrar_turistico  
 
 
-# Inicialización del cliente de Google Maps
-# CORRECCIÓN DE SEGURIDAD: Lee la clave desde secrets.toml, cayendo a os.environ
-API_KEY = st.secrets.get("GOOGLE_PLACES_API_KEY") or os.environ.get("GOOGLE_PLACES_API_KEY") 
-gmaps = googlemaps.Client(key=API_KEY) if API_KEY else None
+# --- 2. CONFIGURACIÓN DE PÁGINA Y BARRA LATERAL (DONACIONES) ---
+st.set_page_config(
+    page_title="Planificador de Rutas",
+    layout="wide",  
+    initial_sidebar_state="expanded"  
+)
+
+# Sección de Donaciones en la Barra Lateral
+st.sidebar.markdown("---")
+st.sidebar.subheader("Apoya el desarrollo 🧑‍💻")
+st.sidebar.info(
+    "¿Te ha sido útil este planificador de rutas? "
+    "Considera una pequeña donación para ayudarme a mantener y mejorar la aplicación."
+)
+
+# CORRECCIÓN DE SINTAXIS: La URL está correctamente encapsulada.
+DONATION_URL = "https://www.paypal.com/donate/?business=73LFHKS2WCQ9U&no_recurring=0&item_name=Ayuda+para+desarrolladores&currency_code=EUR"  
+
+# Muestra el botón de enlace directo
+st.sidebar.markdown(
+    f"""
+    <a href="{DONATION_URL}" target="_blank">
+        <button style="background-color: #0070BA; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; width: 100%;">
+            Ir al enlace de donación
+        </button>
+    </a>
+    """,
+    unsafe_allow_html=True
+)
+
+st.sidebar.markdown("---")  
 
 
-# --- LÓGICA DE GEOLOCALIZACIÓN Y SUGERENCIAS ---
-
-@st.cache_data(ttl=3600) # Caching: Los resultados de la sugerencia se guardan por 1 hora.
-def suggest_addresses(address_term, key_bucket, min_len=3, bias=None):
-    """
-    Usa la API de Google Places Autocomplete para obtener sugerencias.
-    """
-    if gmaps is None:
-        st.error("No se pudo inicializar la API de Google Maps. Por favor, revisa la clave API en secrets.toml.")
-        return []
+# --- 3. FUNCIÓN PRINCIPAL DE LA APLICACIÓN ---
+def main():
     
-    if len(address_term) < min_len:
-        return []
+    st.title("Planificador de Rutas")
+    st.write(
+        "Crea rutas con paradas usando direcciones completas. La última parada puede ser el destino final."
+    )
+
+    tab_prof, tab_viajero, tab_turistico = st.tabs(["Profesional", "Viajero", "Turístico"])
+
+    with tab_prof:
+        mostrar_profesional()
         
-    try:
-        # Aquí puedes definir un 'components' como 'country:es' si solo quieres España
-        # location_bias solo se usa si se proporciona (desde la ubicación IP)
-        suggestions = gmaps.places_autocomplete(
-            address_term,
-            session_token=key_bucket,
-            language="es",
-            location_bias=bias
-        )
-        return [s['description'] for s in suggestions]
-    except Exception as e:
-        # warnings.warn(f"Error en Google Places Autocomplete: {e}")
-        return []
-
-@st.cache_data(ttl=3600 * 24) # Caching: Las coordenadas geocodificadas se guardan por 24 horas.
-def resolve_selection(address_label, key_bucket):
-    """
-    Usa la API de Geocoding para obtener la lat/lng de la dirección seleccionada.
-    Retorna un diccionario con 'address' (normalizada) y 'lat_lng'.
-    """
-    if gmaps is None:
-        return {"address": address_label, "lat_lng": None}
-    
-    try:
-        results = gmaps.geocode(address_label, language="es")
-        if results:
-            first_result = results[0]
-            lat_lng = first_result['geometry']['location']
-            return {
-                "address": first_result['formatted_address'],
-                "lat_lng": f"{lat_lng['lat']},{lat_lng['lng']}"
-            }
-        else:
-            return {"address": address_label, "lat_lng": None}
-    except Exception as e:
-        # warnings.warn(f"Error en Google Geocode: {e}")
-        return {"address": address_label, "lat_lng": None}
-
-
-def _use_ip_bias():
-    """Obtiene la ubicación basada en la IP y la guarda en el estado de sesión."""
-    # Intentamos obtener la IP y luego la ubicación
-    try:
-        # Usar un servicio externo simple para la IP (solo funciona en Streamlit Cloud)
-        ip_data = requests.get('https://ipinfo.io/json').json()
-        loc_str = ip_data.get('loc') # Formato "lat,lng"
+    with tab_viajero:
+        st.info("Pestaña Viajero en construcción. ¡Vuelve pronto!")
         
-        if loc_str:
-            # location_bias para la API de Places: circular:radius@lat,lng
-            st.session_state["_loc_bias"] = f"circle:20000@{loc_str}" # Radio de 20km
-        else:
-            st.warning("No se pudo obtener la ubicación IP. Usando búsqueda global.")
-            st.session_state["_loc_bias"] = None
-
-    except Exception as e:
-        st.error("Error al obtener la ubicación IP para sesgo de búsqueda.")
-        st.session_state["_loc_bias"] = None
-        
-def set_location_bias():
-    """Retorna el sesgo de ubicación (si está activo) para las funciones de búsqueda."""
-    return st.session_state.get("_loc_bias")
+    with tab_turistico:
+        st.info("Pestaña Turístico en construcción. ¡Vuelve pronto!")
 
 
-# --- CONSTRUCCIÓN DE ENLACES DE MAPAS ---
-
-def build_gmaps_url(origin, destination, waypoints=None, mode="driving", avoid=None, optimize=False):
-    """Construye la URL para Google Maps."""
-    base_url = "https://www.google.com/maps/dir/?api=1"
-    
-    params = {
-        'origin': quote(origin),
-        'destination': quote(destination),
-        'travelmode': mode,
-    }
-    
-    if waypoints:
-        waypoints_str = '|'.join([quote(wp) for wp in waypoints])
-        params['waypoints'] = waypoints_str
-        if optimize:
-            # Aquí es donde se solicita la optimización.
-            # Google Maps lo hace de forma automática para rutas de Directions API, 
-            # pero en la URL, el parámetro 'optimize:true' se usa en la API Directions.
-            # Para URL, la mejor práctica es pasar los waypoints como 'waypoints' 
-            # y la optimización la hace Google automáticamente si se detecta un conjunto de waypoints.
-            # Eliminamos el parámetro 'dir_action' que no es estándar para optimización aquí.
-            pass
-            
-    if avoid:
-        params['avoid'] = avoid
-        
-    url = base_url + "&" + "&".join([f"{key}={value}" for key, value in params.items()])
-    return url
-
-def build_waze_url(origin, destination, waypoints=None):
-    """Construye la URL para Waze. Waze es muy limitado y solo soporta origen y destino."""
-    # Waze no soporta paradas intermedias ni optimización, solo origen y destino.
-    # Usaremos el destino final.
-    base_url = "https://waze.com/ul"
-    
-    params = {
-        'navigate': 'yes',
-        'q': quote(destination)
-    }
-    
-    # Opcional: Intentar añadir origen (Waze lo soporta con "from=")
-    # Sin embargo, 'q' es la forma más compatible.
-    
-    url = base_url + "?" + "&".join([f"{key}={value}" for key, value in params.items()])
-    return url
-
-def build_apple_maps_url(origin, destination, waypoints=None):
-    """Construye la URL para Apple Maps."""
-    # Apple Maps soporta paradas intermedias
-    base_url = "http://maps.apple.com/"
-    
-    # Formato: daddr=DESTINO&saddr=ORIGEN&dirflg=d&z=10
-    
-    params = {
-        'daddr': quote(destination),
-        'saddr': quote(origin),
-        'dirflg': 'd' # d=driving
-    }
-    
-    if waypoints:
-        # Apple Maps usa 'via' para puntos intermedios, pero el soporte URL es variable.
-        # Es más fiable concatenar los waypoints al destino en el formato: destino/parada1/parada2
-        # Lo más fiable para Apple Maps es usar el formato de búsqueda concatenada:
-        all_stops = [quote(destination)] + [quote(wp) for wp in waypoints]
-        params['daddr'] = '@'.join(all_stops)
-    
-    url = base_url + "?" + "&".join([f"{key}={value}" for key, value in params.items()])
-    return url
+# --- 4. EJECUCIÓN DEL PROGRAMA ---
+if __name__ == "__main__":
+    main()
