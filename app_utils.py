@@ -5,10 +5,13 @@ from urllib.parse import quote_plus
 
 import streamlit as st
 
+<<<<<<< HEAD
 try:
     import googlemaps
 except Exception:  # si no está instalada en local, no rompas
     googlemaps = None  # type: ignore
+=======
+>>>>>>> 2c8836a (cambio)
 
 # --- Clave para Google Places (secrets primero, luego env) ---
 API_KEY = (
