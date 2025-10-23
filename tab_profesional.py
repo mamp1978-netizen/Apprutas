@@ -1,3 +1,4 @@
+print("DEBUG: tab_profesional cargado (rama DESARROLLO)")
 print("DEBUG: DESARROLLO — tab_profesional.py")
 import streamlit as st
 print("DEBUG: cargado tab_profesional.py desde RAMA DESARROLLO")
