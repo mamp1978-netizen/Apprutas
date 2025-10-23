@@ -1,9 +1,25 @@
 import streamlit as st
-print("DEBUG: main_desarrollo.py — RAMA DESARROLLO")   # <- debería verse en logs Cloud
-from tab_profesional_ui import mostrar_profesional
+
+# --- Config básica de la página ---
+st.set_page_config(
+    page_title="Planificador de Rutas",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# --- Barra lateral (opcional, igual que prod) ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("Apoya el desarrollo 🧑‍💻")
+st.sidebar.info(
+    "¿Te ha sido útil este planificador de rutas? "
+    "Considera una pequeña donación para ayudarme a mantener y mejorar la aplicación."
+)
+
+# --- UI principal ---
+from tab_profesional import mostrar_profesional
 
 def main():
-    st.set_page_config(page_title="Apprutas (Pruebas)", layout="centered")
+    st.title("Planificador de Rutas")
     mostrar_profesional()
 
 if __name__ == "__main__":
