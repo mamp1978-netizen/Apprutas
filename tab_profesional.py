@@ -65,11 +65,28 @@ def _reset_point_selection():
     else:
         st.session_state["selected_point_index"] = 0
     _force_rerun_with_clear()
+    
+# --- FUNCIÓN DE CALLBACK PARA EL CHECKBOX DE UBICACIÓN ---
+def _toggle_location_bias():
+    """Maneja el cambio del checkbox de ubicación y fuerza el rerun."""
+    is_active = st.session_state["prof_use_loc_cb"]
+    
+    if is_active:
+        if st.session_state.get("_loc_bias") is None:
+            # Obtiene la ubicación y la guarda en st.session_state["_loc_bias"]
+            _use_ip_bias()
+    else:
+        if st.session_state.get("_loc_bias") is not None:
+            del st.session_state["_loc_bias"]
+            
+    # Forzar el rerun una vez al final del callback
+    st.rerun()
+
 
 def _add_point_from_ui():
     """Añade la dirección seleccionada/escrita a la lista y limpia la barra."""
     
-    # --- CORRECCIÓN 1: El chequeo de límite ya está en el botón, pero lo mantenemos para seguridad ---
+    # --- CHEQUEO DE LÍMITE ---
     if len(st.session_state["prof_points"]) >= MAX_POINTS:
         # Aquí ya no debería llegar si el botón está deshabilitado
         return
@@ -192,7 +209,7 @@ def _run_search():
 def _search_box():
     st.markdown("---")
     
-    # --- CORRECCIÓN 2: Lógica de deshabilitar input ---
+    # --- Lógica de deshabilitar input ---
     is_limit_reached = len(st.session_state.get("prof_points", [])) >= MAX_POINTS
 
     # 1. ENTRADA DE TEXTO
@@ -238,24 +255,17 @@ def _search_box():
         st.button("Limpiar", on_click=_clear_points, key="prof_clear_btn", use_container_width=True)
 
     with col_loc:
-        # Aseguramos que la caja de ubicación mantenga su estado
-        is_loc_active = st.checkbox(
+        # --- CAMBIO CLAVE: Usar el callback on_change en lugar de la lógica if/else ---
+        st.checkbox(
             "📍 Usar mi ubicación", 
             key="prof_use_loc_cb", 
+            # El valor lo determina la existencia de _loc_bias, no al revés
             value=st.session_state.get("_loc_bias") is not None,
-            help="Si está activado, la búsqueda se sesga a tu ubicación IP."
+            help="Si está activado, la búsqueda se sesga a tu ubicación IP.",
+            on_change=_toggle_location_bias # <-- ¡NUEVA FUNCIÓN DE CALLBACK!
         )
-        
-        # Lógica para activar/desactivar el sesgo de ubicación
-        if is_loc_active:
-             if st.session_state.get("_loc_bias") is None:
-                 _use_ip_bias()
-                 _force_rerun_with_clear() # Forzar rerun para cargar el bias
-        else:
-             if st.session_state.get("_loc_bias") is not None:
-                 del st.session_state["_loc_bias"]
-                 _force_rerun_with_clear() # Forzar rerun para eliminar el bias
-                 
+        # Se elimina la lógica anterior de if/else y st.rerun()
+
     st.markdown("---")
 
 # -------------------------------
@@ -279,7 +289,7 @@ def mostrar_profesional():
     # 2. Barra de búsqueda
     _search_box()
     
-    # --- CORRECCIÓN 3: ADVERTENCIA CLARA Y ACTUALIZADA ---
+    # --- ADVERTENCIA CLARA Y ACTUALIZADA ---
     pts_count = len(st.session_state.get("prof_points", []))
     if pts_count >= MAX_POINTS:
         st.warning(f"Límite alcanzado ({pts_count} de {MAX_POINTS}). Solo se permiten {MAX_POINTS} puntos para garantizar un cálculo rápido y estable.")
