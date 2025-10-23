@@ -384,7 +384,7 @@ def mostrar_profesional():
         
         # --- 4.1 Resolución de Puntos ---
         # Si la clave API no se cargó, advertimos
-        from app_utils import gmaps
+from app_utils_core import gmaps
         if gmaps is None:
             st.error("ERROR CRÍTICO: No se pudo conectar con la API de Google Maps. Revisa tu clave en secrets.toml.")
             return
