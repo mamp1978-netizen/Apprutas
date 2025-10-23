@@ -1,12 +1,9 @@
 import streamlit as st
-from app_utils import (
+from app_utils_core import (
     suggest_addresses,
-    resolve_selection, 
     build_gmaps_url,
-    build_waze_url, 
-    build_apple_maps_url, 
-    set_location_bias,
-    _use_ip_bias 
+    build_waze_url,
+    build_apple_maps_url,
 )
 # from io import BytesIO
 
