@@ -54,7 +54,9 @@ def resolve_selection(term:str,place_id:str|None=None)->dict:
     except Exception: return base
 
 def build_gmaps_url(origin,destination,waypoints=None,mode="driving",avoid=None,optimize=True):
-    o=_addr_from_any(origin); d=_addr_from_any(destination)
+    def _addr(x):
+        a=_addr_from_any(x); return a if a else None
+    o=_addr(origin); d=_addr(destination)
     if not o or not d: return None
     parts=["https://www.google.com/maps/dir/?api=1",
            f"origin={quote_plus(o)}",
@@ -67,7 +69,7 @@ def build_gmaps_url(origin,destination,waypoints=None,mode="driving",avoid=None,
         if vals: parts.append(f"avoid={quote_plus(','.join(vals))}")
     if waypoints:
         if not isinstance(waypoints,(list,tuple)): waypoints=[waypoints]
-        wp=[quote_plus(s) for s in (_addr_from_any(w) for w in waypoints) if s]
+        wp=[quote_plus(s) for s in (_addr(w) for w in waypoints) if s]
         if wp: parts.append(f"waypoints={('optimize:true|' if optimize else '')+'|'.join(wp)}")
     return "&".join(parts)
 
