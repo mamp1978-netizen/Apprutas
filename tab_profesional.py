@@ -10,6 +10,9 @@ from app_utils import (
 )
 # from io import BytesIO
 
+# --- LÍMITE DE PUNTOS CONSTANTE ---
+MAX_POINTS = 10 # 1 Origen + 8 Paradas + 1 Destino
+
 # -------------------------------
 # INICIALIZACIÓN DEL ESTADO DE SESIÓN (CRUCIAL)
 # -------------------------------
@@ -65,6 +68,13 @@ def _reset_point_selection():
 
 def _add_point_from_ui():
     """Añade la dirección seleccionada/escrita a la lista y limpia la barra."""
+    
+    # --- CAMBIO 1: VERIFICAR LÍMITE ANTES DE AÑADIR ---
+    if len(st.session_state["prof_points"]) >= MAX_POINTS:
+        st.error(f"Se ha alcanzado el límite máximo de {MAX_POINTS} puntos para la ruta (Origen + Destino + {MAX_POINTS - 2} Paradas).")
+        return
+    # --------------------------------------------------
+
     value = ""
     # Si hay sugerencias, usa la seleccionada; si no, usa el texto de entrada
     if st.session_state.get("prof_top_suggestions"):
@@ -187,7 +197,8 @@ def _search_box():
         "Buscar dirección...",
         key="prof_text_input",
         label_visibility="collapsed",
-        placeholder="Escribe la dirección (mín. 3 letras) y pulsa ENTER",
+        # Hacemos el placeholder dinámico para reflejar el límite
+        placeholder=f"Escribe la dirección (mín. 3 letras). Límite: {MAX_POINTS} puntos.",
         on_change=_run_search 
     )
     
@@ -204,6 +215,9 @@ def _search_box():
         )
     
     # 3. Botones de acción y ubicación (Compactación de botones)
+    # Deshabilitamos el botón 'Añadir' si se alcanza el límite.
+    is_limit_reached = len(st.session_state.get("prof_points", [])) >= MAX_POINTS
+
     col_add, col_clear, col_loc = st.columns([1.5, 1, 1]) 
 
     with col_add:
@@ -212,7 +226,9 @@ def _search_box():
             on_click=_add_point_from_ui, 
             type="primary",
             key="prof_add_btn",
-            use_container_width=True
+            use_container_width=True,
+            # Deshabilitar si se alcanza el límite
+            disabled=is_limit_reached
         )
 
     with col_clear:
@@ -259,10 +275,15 @@ def mostrar_profesional():
 
     # 2. Barra de búsqueda
     _search_box()
+    
+    # --- CAMBIO 2: ADVERTENCIA CLARA DEL LÍMITE ---
+    if len(st.session_state.get("prof_points", [])) >= MAX_POINTS:
+        st.warning(f"Límite alcanzado. Solo se permiten {MAX_POINTS} puntos para garantizar un cálculo rápido y estable.")
+    # -----------------------------------------------
 
     # 3. Lista de puntos y herramientas
     pts = st.session_state["prof_points"] 
-    st.subheader("Puntos de la ruta (orden de viaje)")
+    st.subheader(f"Puntos de la ruta ({len(pts)} de {MAX_POINTS} añadidos)")
     
     if not pts:
         st.info("Agregue al menos dos puntos (origen y destino) para generar la ruta.")
