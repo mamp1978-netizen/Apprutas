@@ -1,4 +1,5 @@
 import streamlit as st
+print("DEBUG: cargado tab_profesional.py desde RAMA DESARROLLO")
 from app_utils_core import (
     suggest_addresses,
     build_gmaps_url,
