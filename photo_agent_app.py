@@ -12,7 +12,7 @@ def _import_ui():
     """
     Intenta importar la UI de forma robusta:
     1) from tab_profesional import mostrar_profesional
-    2) from tab_profesional.ui import mostrar_profesional
+    2) from tab_profesional import mostrar_profesional
     """
     try:
         mod = importlib.import_module("tab_profesional")
