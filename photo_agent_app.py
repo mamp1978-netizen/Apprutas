@@ -1,15 +1,13 @@
-# photo_agent_app.py  (PRO)
+# photo_agent_app.py (PRO)
+
 import streamlit as st
 
-# --- IMPORT de la UI robusto ---
-try:
-    from tab_profesional import mostrar_profesional  # gracias a __init__.py
-except Exception:
-    # Fallback: import directo del módulo plano (si existiera)
-    from tab_profesional_ui import mostrar_profesional  # solo si mantienes este archivo en PRO
+# --- IMPORT de la UI (paquete) ---
+from tab_profesional import mostrar_profesional
 
-# --- Config de página y sidebar (igual que antes) ---
+# --- Config de página y sidebar ---
 st.set_page_config(page_title="Planificador de Rutas", layout="wide", initial_sidebar_state="expanded")
+
 st.sidebar.markdown("---")
 st.sidebar.subheader("Apoya el desarrollo 🧑‍💻")
 st.sidebar.info(
