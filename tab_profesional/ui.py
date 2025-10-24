@@ -35,7 +35,7 @@ def mostrar_profesional():
 
         if not (gmaps_url or waze_url or apple_url):
             st.error("No se pudo generar ninguna URL. Revisa origen/destino.")
-            
+
 # from io import BytesIO
 
 # --- LÍMITE DE PUNTOS CONSTANTE ---

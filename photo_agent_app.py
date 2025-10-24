@@ -1,11 +1,6 @@
-# photo_agent_app.py (PRO)
-
 import streamlit as st
-
-# --- IMPORT de la UI (paquete) ---
 from tab_profesional import mostrar_profesional
 
-# --- Config de página y sidebar ---
 st.set_page_config(page_title="Planificador de Rutas", layout="wide", initial_sidebar_state="expanded")
 
 st.sidebar.markdown("---")
@@ -28,7 +23,6 @@ st.sidebar.markdown("---")
 def main():
     st.title("Planificador de Rutas")
     st.write("Crea rutas con paradas usando direcciones completas. La última parada puede ser el destino final.")
-
     tab_prof, tab_viajero, tab_turistico = st.tabs(["Profesional", "Viajero", "Turístico"])
     with tab_prof:
         mostrar_profesional()
