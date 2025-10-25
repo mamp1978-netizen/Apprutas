@@ -16,7 +16,7 @@ def _import_ui():
 mostrar_profesional = _import_ui()
 
 def main():
-    st.title("Planificador de Rutas 🧪 PRUEBAS")
+    # st.title("Planificador de Rutas 🧭 PRUEBAS")
     mostrar_profesional()
 
 if __name__ == "__main__":
