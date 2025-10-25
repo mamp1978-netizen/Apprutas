@@ -1,3 +1,4 @@
+<<<<<<< HEAD
  [server]
 headless = true
 enableCORS = false
@@ -5,3 +6,11 @@ enableXsrfProtection = false
 
 [theme]
 base = "light"
+=======
+[server]
+enableCORS = false
+enableXsrfProtection = false
+
+[client]
+toolbarMode = "auto"
+>>>>>>> desarollo
