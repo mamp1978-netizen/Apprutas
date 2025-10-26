@@ -3,10 +3,10 @@ import streamlit as st
 from app_utils_core import (
     suggest_addresses,
     resolve_selection,
-    build_gmaps_url,                 # usa place_id cuando está
+    build_gmaps_url,                 # parcheado con place_id
     build_waze_url,
-    build_apple_maps_url,            # Apple (web) solo O→D
-    build_gmaps_android_intent_url,  # app nativa Android
+    build_apple_maps_url,            # limitado a O→D
+    build_gmaps_android_intent_url,  # abre app nativa en Android
 )
 
 MAX_POINTS = 10  # 1 origen + 8 paradas + 1 destino
@@ -17,67 +17,25 @@ MAX_POINTS = 10  # 1 origen + 8 paradas + 1 destino
 # -------------------------------
 def initialize_session_state():
     ss = st.session_state
-    ss.setdefault("prof_points", [])           # lista de strings (direcciones/POIs)
+    ss.setdefault("prof_points", [])
     ss.setdefault("prof_mode", "Más rápido")
     ss.setdefault("prof_avoid", "Ninguno")
-    ss.setdefault("prof_open_target", "Navegador")
+    ss.setdefault("prof_open_target", "Navegador")  # futuro uso
 
 
 # -------------------------------
-# Helpers
+# Acciones sobre la lista
 # -------------------------------
-def _resolve_or_warn(text: str):
-    """
-    Intenta resolver con 'resolve_selection' (para sacar address + place_id).
-    Si no puede, devuelve None y mostramos aviso.
-    """
-    try:
-        meta = resolve_selection(text, None) or {}
-    except Exception:
-        meta = {}
-    # Si ni address ni place_id, lo consideramos no-resuelto
-    if not (meta.get("address") or meta.get("place_id")):
-        return None
-    return meta
-
-
 def _add_point(value: str):
+    ss = st.session_state
+    if len(ss["prof_points"]) >= MAX_POINTS:
+        st.warning("Has alcanzado el máximo de puntos.")
+        return
     value = (value or "").strip()
     if not value:
         st.warning("Escribe o selecciona una dirección válida.")
         return
-    # Evita duplicados exactos (por texto)
-    pts = st.session_state["prof_points"]
-    if value in pts:
-        st.info("Ese punto ya está en la lista.")
-        return
-    if len(pts) >= MAX_POINTS:
-        st.warning("Has alcanzado el máximo de puntos.")
-        return
-    # Intentamos resolver aquí para filtrar entradas muy ambiguas
-    meta = _resolve_or_warn(value)
-    if meta is None:
-        st.warning("No pude identificar ese lugar. Elige una sugerencia o añade más detalle (nº, barrio…).")
-        return
-    # Si pasa la resolución mínima, lo añadimos (guardamos el texto, la resolución se usará al generar)
-    pts.append(value)
-
-
-def _remove_point(idx: int):
-    pts = st.session_state["prof_points"]
-    if 0 <= idx < len(pts):
-        pts.pop(idx)
-
-
-def _move_point(idx: int, direction: str):
-    """Simula el 'handle' con ▲ ▼."""
-    pts = st.session_state["prof_points"]
-    if not (0 <= idx < len(pts)):
-        return
-    if direction == "up" and idx > 0:
-        pts[idx - 1], pts[idx] = pts[idx], pts[idx - 1]
-    elif direction == "down" and idx < len(pts) - 1:
-        pts[idx + 1], pts[idx] = pts[idx], pts[idx + 1]
+    ss["prof_points"].append(value)
 
 
 def _clear_points():
@@ -90,7 +48,7 @@ def _clear_points():
 def _search_and_options_row():
     ss = st.session_state
 
-    # Estilos del input (mejor contraste)
+    # Estilos de input (mejora contraste)
     st.markdown(
         """
         <style>
@@ -110,7 +68,7 @@ def _search_and_options_row():
 
     col_search, col_mode, col_avoid = st.columns([2.5, 1, 1])
 
-    # -------- FORM (solo submit buttons dentro) --------
+    # -------- FORM: solo submit buttons dentro --------
     with col_search:
         with st.form("prof_add_form", clear_on_submit=True):
             term = st.text_input(
@@ -142,7 +100,7 @@ def _search_and_options_row():
 
         # Manejo de submit (fuera del with del form)
         if submitted_add:
-            candidate = ss.get("prof_selection") or term
+            candidate = st.session_state.get("prof_selection") or term
             _add_point(candidate)
             st.rerun()
         if submitted_clear:
@@ -185,19 +143,9 @@ def mostrar_profesional():
 
     pts = ss["prof_points"]
     st.subheader(f"Puntos ({len(pts)}/{MAX_POINTS})")
-
     if pts:
-        # Fila compacta: texto + ▲ ▼ ❌ a la derecha (simula handle + borrar)
         for i, p in enumerate(pts, start=1):
-            c_txt, c_up, c_down, c_del = st.columns([8, 1, 1, 1])
-            with c_txt:
-                st.write(f"{i}. {p}")
-            with c_up:
-                st.button("▲", key=f"up_{i}", help="Subir", on_click=_move_point, args=(i-1, "up"))
-            with c_down:
-                st.button("▼", key=f"down_{i}", help="Bajar", on_click=_move_point, args=(i-1, "down"))
-            with c_del:
-                st.button("❌", key=f"del_{i}", help="Eliminar", on_click=_remove_point, args=(i-1,))
+            st.write(f"{i}. {p}")
     else:
         st.info("Añade al menos **origen** y **destino** para generar la ruta.")
 
@@ -207,56 +155,52 @@ def mostrar_profesional():
             st.warning("Necesitas al menos origen y destino.")
             return
 
-        # Resolvemos cada punto a (address/place_id)
-        metas = []
-        for lbl in pts:
-            m = _resolve_or_warn(lbl)
-            if m is None:
-                st.error(f"No pude identificar “{lbl}”. Ajusta ese punto o elige una sugerencia.")
-                return
-            metas.append(m)
+        origen_label = pts[0]
+        destino_label = pts[-1]
+        wp_labels = pts[1:-1]
 
-        origen_meta = metas[0]
-        destino_meta = metas[-1]
-        wp_metas = metas[1:-1]
+        # Resolver metadatos (address + place_id si lo hay)
+        origen_meta = resolve_selection(origen_label, None)
+        destino_meta = resolve_selection(destino_label, None)
+        waypoints_meta = [resolve_selection(lbl, None) for lbl in wp_labels]
 
         avoid_map = {"Peajes": "tolls", "Ferries": "ferries", "Ninguno": None}
 
-        # Google Maps (Web) con place_id donde exista
+        # Google Maps (Web) con place_id
         gmaps_web = build_gmaps_url(
-            origin=origen_meta.get("address", pts[0]),
-            destination=destino_meta.get("address", pts[-1]),
-            waypoints=[m.get("address") for m in wp_metas],
+            origin=origen_meta.get("address", origen_label),
+            destination=destino_meta.get("address", destino_label),
+            waypoints=[m.get("address", w) for m, w in zip(waypoints_meta, wp_labels)],
             mode="driving",
             avoid=avoid_map.get(ss["prof_avoid"]),
             optimize=True,
             origin_place_id=origen_meta.get("place_id"),
             destination_place_id=destino_meta.get("place_id"),
-            waypoint_place_ids=[m.get("place_id") for m in wp_metas],
+            waypoint_place_ids=[m.get("place_id") for m in waypoints_meta],
         )
 
         # Google Maps (APP Android)
         gmaps_app = build_gmaps_android_intent_url(
-            origin=origen_meta.get("address", pts[0]),
-            destination=destino_meta.get("address", pts[-1]),
-            waypoints=[m.get("address") for m in wp_metas],
+            origin=origen_meta.get("address", origen_label),
+            destination=destino_meta.get("address", destino_label),
+            waypoints=[m.get("address", w) for m, w in zip(waypoints_meta, wp_labels)],
             mode="driving",
             avoid=avoid_map.get(ss["prof_avoid"]),
         )
 
         # Waze (web)
         waze_url = build_waze_url(
-            origen_meta.get("address", pts[0]),
-            destino_meta.get("address", pts[-1]),
+            origen_meta.get("address", origen_label),
+            destino_meta.get("address", destino_label),
         )
 
-        # Apple (web): O→D
+        # Apple Maps: solo O→D; si hay paradas mostramos aviso
         apple_url = build_apple_maps_url(
-            origen_meta.get("address", pts[0]),
-            destino_meta.get("address", pts[-1]),
+            origen_meta.get("address", origen_label),
+            destino_meta.get("address", destino_label),
         )
-        if wp_metas:
-            st.info("🍎 Apple (web) solo admite **origen → destino**. Se ignoran paradas intermedias.")
+        if waypoints_meta:
+            st.info("🍎 Apple Maps solo admite **origen → destino**. Se ignoran paradas intermedias.")
 
         st.success("Ruta generada. Elige cómo abrirla 👇")
         c1, c2, c3, c4 = st.columns(4)

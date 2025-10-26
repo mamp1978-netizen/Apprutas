@@ -1,0 +1,403 @@
+# tab_profesional/ui.py
+import streamlit as st
+from app_utils_core import (
+    suggest_addresses,
+    resolve_selection,
+    build_gmaps_url,
+    build_waze_url,
+    build_apple_maps_url,
+    gmaps,
+    build_gmaps_android_intent_url,  # helper para abrir la app nativa de Google Maps (Android)
+)
+
+MAX_POINTS = 10  # 1 Origen + 8 Paradas + 1 Destino
+
+
+# -------------------------------
+# Estado
+# -------------------------------
+def initialize_session_state():
+    ss = st.session_state
+    ss.setdefault("prof_points", [])
+    ss.setdefault("selected_point_index", None)    # sin selección por defecto
+    ss.setdefault("is_editing_point", False)
+    ss.setdefault("edit_input_value", "")
+    ss.setdefault("prof_text_input", "")
+    ss.setdefault("prof_top_suggestions", [])
+    ss.setdefault("prof_selection", "")
+    ss.setdefault("prof_last_route_url", None)
+    ss.setdefault("prof_mode", "Más rápido")
+    ss.setdefault("prof_avoid", "Ninguno")
+    ss.setdefault("prof_open_target", "Navegador")  # reservado para usos futuros
+
+
+def _force_rerun():
+    st.rerun()
+
+
+def _clear_selection():
+    ss = st.session_state
+    ss["is_editing_point"] = False
+    ss["edit_input_value"] = ""
+    ss["selected_point_index"] = None
+    _force_rerun()
+
+
+# -------------------------------
+# Acciones
+# -------------------------------
+def _add_point_from_value(value: str):
+    ss = st.session_state
+    if len(ss["prof_points"]) >= MAX_POINTS:
+        return
+    value = (value or "").strip()
+    if not value:
+        st.warning("Escribe o selecciona una dirección válida.")
+        return
+    ss["prof_points"].append(value)
+    # Limpiar selección/sugerencias tras añadir
+    ss["prof_selection"] = ""
+    ss["prof_top_suggestions"] = []
+    ss["selected_point_index"] = None
+    _force_rerun()
+
+
+def _clear_points():
+    ss = st.session_state
+    ss["prof_points"] = []
+    ss["prof_last_route_url"] = None
+    ss["prof_text_input"] = ""
+    ss["prof_top_suggestions"] = []
+    ss["prof_selection"] = ""
+    _clear_selection()
+
+
+def _select_point(i: int):
+    st.session_state["selected_point_index"] = i
+    _force_rerun()
+
+
+def _move_point(direction: str, i: int):
+    ss = st.session_state
+    pts = ss["prof_points"]
+    if direction == "up" and i > 0:
+        pts.insert(i - 1, pts.pop(i))
+        ss["selected_point_index"] = i - 1
+    elif direction == "down" and i < len(pts) - 1:
+        pts.insert(i + 1, pts.pop(i))
+        ss["selected_point_index"] = i + 1
+    _force_rerun()
+
+
+def _delete_point(i: int):
+    ss = st.session_state
+    pts = ss["prof_points"]
+    if 0 <= i < len(pts):
+        pts.pop(i)
+    _clear_selection()
+
+
+def _enter_edit_mode(i: int):
+    ss = st.session_state
+    pts = ss["prof_points"]
+    if 0 <= i < len(pts):
+        ss["is_editing_point"] = True
+        ss["edit_input_value"] = pts[i]
+        ss["selected_point_index"] = i
+    _force_rerun()
+
+
+def _save_point_from_toolbar(i: int):
+    ss = st.session_state
+    pts = ss["prof_points"]
+    new_value = ss["edit_input_value"].strip()
+    if 0 <= i < len(pts) and new_value and len(new_value) >= 3:
+        pts[i] = new_value
+        st.success("Punto actualizado ✅")
+        _clear_selection()
+    else:
+        st.warning("La dirección no puede estar vacía y debe tener al menos 3 letras.")
+
+
+# -------------------------------
+# UI: buscador (3 columnas)
+# -------------------------------
+def _search_and_options_row():
+    ss = st.session_state
+
+    # Estilos input
+    st.markdown(
+        """
+        <style>
+        div[data-baseweb="input"] > div {
+            background-color: #fafafa !important;
+            border-radius: 8px !important;
+            border: 1px solid #ccc !important;
+            transition: all 0.2s ease-in-out;
+        }
+        div[data-baseweb="input"]:focus-within > div {
+            border-color: #007BFF !important;
+            box-shadow: 0 0 6px rgba(0,123,255,0.25) !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col_search, col_mode, col_avoid = st.columns([2.5, 1, 1])
+
+    # --- Columna: Buscador ---
+    with col_search:
+        # Usamos form con clear_on_submit para limpiar el input al darle a "Añadir"
+        with st.form("prof_add_form", clear_on_submit=True):
+            term = st.text_input(
+                "Buscar dirección...",
+                key="prof_text_input",
+                label_visibility="collapsed",
+                placeholder=f"Escribe la dirección (mín. 3 letras). Límite: {MAX_POINTS} puntos.",
+            )
+
+            suggestions = []
+            if len((term or "").strip()) >= 3:
+                try:
+                    suggestions = suggest_addresses(term.strip(), min_len=3, max_results=8)
+                except Exception:
+                    suggestions = []
+
+            if suggestions:
+                st.selectbox(
+                    "Selecciona la sugerencia más precisa:",
+                    options=[s["description"] for s in suggestions],
+                    key="prof_selection",
+                    label_visibility="visible",
+                )
+
+            c_add, _ = st.columns([1.5, 1])
+            submitted = c_add.form_submit_button("Añadir", type="primary", use_container_width=True)
+
+            if submitted:
+                candidate = ss.get("prof_selection") or term
+                _add_point_from_value(candidate)
+
+        # "Limpiar" DEBE IR FUERA DEL FORM para evitar el error de callbacks
+        st.button("Limpiar", on_click=_clear_points, key="prof_clear_btn", use_container_width=True)
+
+    # --- Columna: Tipo de ruta ---
+    with col_mode:
+        st.selectbox(
+            "Tipo de ruta",
+            ["Más rápido", "Más corto"],
+            key="prof_mode",
+            label_visibility="visible",
+        )
+
+    # --- Columna: Evitar ---
+    with col_avoid:
+        st.selectbox(
+            "Evitar",
+            ["Ninguno", "Peajes", "Ferries"],
+            key="prof_avoid",
+            label_visibility="visible",
+        )
+
+
+# -------------------------------
+# UI: fila + toolbar inline
+# -------------------------------
+def _row_button(i: int, label: str, is_selected: bool):
+    styles = {
+        "border": "#007BFF" if is_selected else "#ddd",
+        "bg": "#E6F0FF" if is_selected else "#fdfdfd",
+        "color": "#003366" if is_selected else "#333",
+    }
+    html = f"""
+        <button style="
+            width: 100%;
+            text-align: left;
+            padding: 9px 10px;
+            border-radius: 6px;
+            border: 1px solid {styles['border']};
+            background-color: {styles['bg']};
+            color: {styles['color']};
+            font-size: 15px;
+            cursor: pointer;
+            margin-bottom: 4px;
+        " onclick="window.parent.postMessage({{'type':'streamlit:setComponentValue','key':'row_btn_{i}','value':true}}, '*')">
+            {i+1}: {label}
+        </button>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+    if st.session_state.get(f"row_btn_{i}", False):
+        st.session_state[f"row_btn_{i}"] = False
+        _select_point(i)
+
+
+def _row_toolbar(i: int):
+    ss = st.session_state
+    is_editing = ss.get("is_editing_point", False)
+
+    c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
+    with c1:
+        st.button("⬆️ Subir", key=f"up_{i}", on_click=_move_point, args=("up", i),
+                  use_container_width=True, disabled=i == 0)
+    with c2:
+        st.button("⬇️ Bajar", key=f"down_{i}", on_click=_move_point, args=("down", i),
+                  use_container_width=True, disabled=i == len(ss["prof_points"]) - 1)
+    with c3:
+        if is_editing:
+            st.button("💾 Guardar", key=f"save_{i}", on_click=_save_point_from_toolbar,
+                      args=(i,), use_container_width=True, type="primary")
+        else:
+            st.button("✏️ Editar", key=f"edit_{i}", on_click=_enter_edit_mode,
+                      args=(i,), use_container_width=True)
+    with c4:
+        if is_editing:
+            st.button("❌ Cancelar", key=f"cancel_{i}", on_click=_clear_selection,
+                      use_container_width=True)
+        else:
+            st.button("🗑️ Eliminar", key=f"del_{i}", on_click=_delete_point,
+                      args=(i,), use_container_width=True)
+
+    if is_editing:
+        st.text_input(
+            "Modificar dirección:",
+            value=ss["edit_input_value"],
+            key="edit_input_value",
+            label_visibility="collapsed",
+            on_change=_save_point_from_toolbar,
+            args=(i,),
+        )
+    st.markdown("")
+
+
+# -------------------------------
+# UI principal
+# -------------------------------
+def mostrar_profesional():
+    initialize_session_state()
+    ss = st.session_state
+
+    st.header("Planificador de rutas")
+
+    _search_and_options_row()
+
+    pts = ss["prof_points"]
+    st.subheader(f"Puntos de la ruta ({len(pts)} de {MAX_POINTS} añadidos)")
+    if not pts:
+        st.info("Agrega al menos dos puntos (origen y destino) para generar la ruta.")
+        return
+
+    selected = ss.get("selected_point_index")
+    for i, p in enumerate(pts):
+        is_selected = (selected == i)
+        _row_button(i, p, is_selected)
+        if is_selected:
+            _row_toolbar(i)
+
+    st.markdown("---")
+if st.button("Generar ruta profesional", type="primary", key="prof_generate_btn"):
+        if len(pts) < 2:
+            st.warning("Deben haber dos o más puntos (origen y destino).")
+            return
+
+        origen_label = pts[0]
+        destino_label = pts[-1]
+        waypoints_labels = pts[1:-1]
+
+        # Si hay cliente de Google cargado, resolvemos; si NO, usamos el texto tal cual
+        if gmaps is not None:
+            origen_meta  = resolve_selection(origen_label, None)
+            destino_meta = resolve_selection(destino_label, None)
+            waypoints_resolved = [
+                resolve_selection(lbl, None).get("address", lbl) for lbl in waypoints_labels
+            ]
+        else:
+            origen_meta  = {"address": origen_label}
+            destino_meta = {"address": destino_label}
+            waypoints_resolved = waypoints_labels  # sin autocompletar
+
+        avoid_map = {"Peajes": "tolls", "Ferries": "ferries", "Ninguno": None}
+
+        # Web (abre navegador; soporta waypoints y optimize)
+        gmaps_web_url = build_gmaps_url(
+            origin=origen_meta.get("address", origen_label),
+            destination=destino_meta.get("address", destino_label),
+            waypoints=waypoints_resolved,
+            mode="driving",
+            avoid=avoid_map.get(st.session_state["prof_avoid"]),
+            optimize=True,
+        )
+
+        # App nativa (Android Intent)
+        gmaps_app_url = build_gmaps_android_intent_url(
+            origin=origen_meta.get("address", origen_label),
+            destination=destino_meta.get("address", destino_label),
+            waypoints=waypoints_resolved,
+            mode="driving",
+            avoid=avoid_map.get(st.session_state["prof_avoid"]),
+        )
+
+        waze_url = build_waze_url(
+            origen_meta.get("address", origen_label),
+            destino_meta.get("address", destino_label),
+        )
+        apple_url = build_apple_maps_url(
+            origen_meta.get("address", origen_label),
+            destino_meta.get("address", destino_label),
+        )
+
+        st.session_state["prof_last_route_url"] = gmaps_web_url
+        st.success("¡Ruta lista! Elige cómo abrirla 👇")
+
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            if gmaps_app_url:
+                st.markdown(f'<a href="{gmaps_app_url}"><button>📱 Maps (App)</button></a>',
+                            unsafe_allow_html=True)
+        with c2:
+            if gmaps_web_url:
+                st.link_button("🌐 Maps (Web)", gmaps_web_url)
+        with c3:
+            if waze_url:
+                st.link_button("🚗 Waze", waze_url)
+        with c4:
+            if apple_url:
+                st.link_button("🍎 Apple Maps", apple_url)
+        # App nativa (Android Intent)
+        gmaps_app_url = build_gmaps_android_intent_url(
+            origin=origen_meta.get("address", origen_label),
+            destination=destino_meta.get("address", destino_label),
+            waypoints=waypoints_resolved,
+            mode="driving",
+            avoid=avoid_map.get(ss["prof_avoid"]),
+        )
+
+        waze_url = build_waze_url(
+            origen_meta.get("address", origen_label),
+            destino_meta.get("address", destino_label),
+        )
+        apple_url = build_apple_maps_url(
+            origen_meta.get("address", origen_label),
+            destino_meta.get("address", destino_label),
+        )
+
+        ss["prof_last_route_url"] = gmaps_web_url
+        st.success("¡Ruta lista! Elige cómo abrirla 👇")
+
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            if gmaps_app_url:
+                # Usamos <a> para que Android/Chromebook respeten el intent:// o google.navigation:q=
+                st.markdown(
+                    f'<a href="{gmaps_app_url}"><button>📱 Maps (App)</button></a>',
+                    unsafe_allow_html=True,
+                )
+        with c2:
+            if gmaps_web_url:
+                st.link_button("🌐 Maps (Web)", gmaps_web_url)
+        with c3:
+            if waze_url:
+                st.link_button("🚗 Waze", waze_url)
+        with c4:
+            if apple_url:
+                st.link_button("🍎 Apple Maps", apple_url)

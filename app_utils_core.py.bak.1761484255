@@ -1,0 +1,144 @@
+# app_utils_core.py
+import urllib.parse
+
+def build_gmaps_android_intent_url(origin: str, destination: str, waypoints: list[str] | None = None,
+                                   mode: str = "driving", avoid: str | None = None) -> str:
+    """
+    Construye un Intent URL para abrir la app nativa de Google Maps en Android.
+    Forzamos el paquete com.google.android.apps.maps y dejamos fallback al navegador.
+    """
+    waypoints = waypoints or []
+    # Construimos también la URL web por si el intent falla
+    def build_gmaps_web_url(origin, destination, waypoints, mode, avoid):
+        base = "https://www.google.com/maps/dir/?api=1"
+        params = {
+            "origin": origin,
+            "destination": destination,
+            "travelmode": "driving" if mode == "driving" else "walking" if mode == "walking" else "driving",
+        }
+        if waypoints:
+            params["waypoints"] = "|".join(waypoints)
+        if avoid in {"tolls", "ferries"}:
+            params["avoid"] = avoid
+        q = urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
+        return f"{base}&{q}"
+
+    web_url = build_gmaps_web_url(origin, destination, waypoints, mode, avoid)
+
+    # Intent con scheme https y paquete forzado (lo más fiable en WebViews)
+    # Formato: intent://maps.google.com/maps?......#Intent;scheme=https;package=com.google.android.apps.maps;end
+    query_params = {
+        "api": "1",
+        "origin": origin,
+        "destination": destination,
+        "travelmode": "driving" if mode == "driving" else "walking" if mode == "walking" else "driving",
+    }
+    if waypoints:
+        query_params["waypoints"] = "|".join(waypoints)
+    if avoid in {"tolls", "ferries"}:
+        query_params["avoid"] = avoid
+
+    q = urllib.parse.urlencode(query_params, quote_via=urllib.parse.quote)
+    intent_url = (
+        f"intent://maps.google.com/maps?{q}"
+        "#Intent;scheme=https;package=com.google.android.apps.maps;end"
+    )
+
+    # Devolvemos el intent; la UI se encargará del fallback al web_url si no abre
+    return intent_url, web_url
+
+def resolve_selection(label: str, meta):
+    # Debe devolver dict con "address" cuando resuelves contra tu fuente.
+    # Si no tienes metadata, devolvemos el mismo label.
+    return {"address": label or ""}
+
+# Si usas un cliente global de Google Maps en otros módulos:
+gmaps = object()  # cambia por el cliente real si lo inicializas en otro sitio
+
+
+# -------------------------
+# URLs Google Maps (WEB)
+# -------------------------
+def build_gmaps_url(origin: str, destination: str, waypoints=None, mode="driving", avoid=None, optimize=True) -> str:
+    """
+    URL web de Google Maps. Soporta origin/destination/waypoints y optimize.
+    """
+    waypoints = waypoints or []
+    base = "https://www.google.com/maps/dir/?api=1"
+    params = {
+        "origin": origin,
+        "destination": destination,
+        "travelmode": mode or "driving",
+    }
+    if waypoints:
+        if optimize:
+            params["waypoints"] = "optimize:true|" + "|".join(waypoints)
+        else:
+            params["waypoints"] = "|".join(waypoints)
+    if avoid:
+        params["avoid"] = avoid  # "tolls", "ferries"
+    q = "&".join(f"{k}={urllib.parse.quote_plus(v)}" for k, v in params.items() if v)
+    return f"{base}&{q}"
+
+
+# -------------------------
+# Intent Android → Google Maps (APP)
+# -------------------------
+def build_gmaps_android_intent_url(origin: str, destination: str, waypoints=None, mode="driving", avoid=None) -> str:
+    """
+    Lanza la app nativa de Google Maps en Android.
+    - Si no hay paradas: usa google.navigation (mejor UX).
+    - Si hay paradas: embebe la URL web en un intent para que la app la resuelva.
+    """
+    waypoints = waypoints or []
+
+    # Caso directo sin paradas
+    if not waypoints and destination:
+        mode_map = {"driving": "d", "walking": "w", "bicycling": "b"}
+        m = mode_map.get(mode or "driving", "d")
+        # origin no es necesario en google.navigation, la app calcula desde ubicación actual
+        return f"google.navigation:q={urllib.parse.quote_plus(destination)}&mode={m}"
+
+    # Con paradas → usa la URL web con optimize dentro del intent
+    web = build_gmaps_url(origin, destination, waypoints=waypoints, mode=mode, avoid=avoid, optimize=True)
+    intent = (
+        "intent://maps.app.goo.gl/?link="
+        + urllib.parse.quote(web, safe="")
+        + "#Intent;scheme=https;package=com.google.android.apps.maps;end"
+    )
+    return intent
+
+
+# -------------------------
+# Waze / Apple Maps
+# -------------------------
+def build_waze_url(origin: str, destination: str) -> str:
+    # Puedes mejorar esto con coordenadas si las tienes. Aquí simplificado:
+    # Waze soporta "q=" con query y "navigate=yes"
+    return f"https://waze.com/ul?q={urllib.parse.quote_plus(destination)}&navigate=yes"
+
+def build_apple_maps_url(origin: str, destination: str) -> str:
+    base = "https://maps.apple.com/"
+    q = f"daddr={urllib.parse.quote_plus(destination)}"
+    if origin:
+        q += f"&saddr={urllib.parse.quote_plus(origin)}"
+    return f"{base}?{q}"
+
+
+# -------------------------
+# Selector según preferencia
+# -------------------------
+def pick_maps_url(open_target: str, origin: str, destination: str, waypoints=None, mode="driving", avoid=None):
+    """
+    open_target: "App" | "Navegador"
+    → Devuelve (gmaps_url, waze_url, apple_url) según elección.
+    """
+    waypoints = waypoints or []
+    if open_target == "App":
+        gmaps_url = build_gmaps_android_intent_url(origin, destination, waypoints, mode, avoid)
+    else:
+        gmaps_url = build_gmaps_url(origin, destination, waypoints, mode, avoid, optimize=True)
+
+    waze_url = build_waze_url(origin, destination)
+    apple_url = build_apple_maps_url(origin, destination)
+    return gmaps_url, waze_url, apple_url

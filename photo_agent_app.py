@@ -1,5 +1,16 @@
 # photo_agent_app.py  — PRUEBAS (rama desarrollo)
 import streamlit as st
+# --- Ocultar avisos del sistema Streamlit (líneas amarillas) ---
+st.markdown(
+    """
+    <style>
+        [data-testid="stNotification"] {
+            display: none !important;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 st.set_page_config(
     page_title="Planificador de Rutas",
@@ -46,8 +57,7 @@ mostrar_profesional = _import_ui()
 
 
 def main():
-    st.title("Planificador de Rutas")
-    st.caption("La UI se carga desde `tab_profesional` (import robusto) ✅")
+    st.title("🧭 Planificador de Rutas")
     mostrar_profesional()
 
 

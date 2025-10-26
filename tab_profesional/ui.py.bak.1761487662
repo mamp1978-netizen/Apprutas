@@ -69,17 +69,6 @@ def _remove_point(idx: int):
         pts.pop(idx)
 
 
-def _move_point(idx: int, direction: str):
-    """Simula el 'handle' con ▲ ▼."""
-    pts = st.session_state["prof_points"]
-    if not (0 <= idx < len(pts)):
-        return
-    if direction == "up" and idx > 0:
-        pts[idx - 1], pts[idx] = pts[idx], pts[idx - 1]
-    elif direction == "down" and idx < len(pts) - 1:
-        pts[idx + 1], pts[idx] = pts[idx], pts[idx + 1]
-
-
 def _clear_points():
     st.session_state["prof_points"] = []
 
@@ -142,7 +131,7 @@ def _search_and_options_row():
 
         # Manejo de submit (fuera del with del form)
         if submitted_add:
-            candidate = ss.get("prof_selection") or term
+            candidate = st.session_state.get("prof_selection") or term
             _add_point(candidate)
             st.rerun()
         if submitted_clear:
@@ -187,17 +176,13 @@ def mostrar_profesional():
     st.subheader(f"Puntos ({len(pts)}/{MAX_POINTS})")
 
     if pts:
-        # Fila compacta: texto + ▲ ▼ ❌ a la derecha (simula handle + borrar)
         for i, p in enumerate(pts, start=1):
-            c_txt, c_up, c_down, c_del = st.columns([8, 1, 1, 1])
-            with c_txt:
+            col_l, col_r = st.columns([6, 1])
+            with col_l:
                 st.write(f"{i}. {p}")
-            with c_up:
-                st.button("▲", key=f"up_{i}", help="Subir", on_click=_move_point, args=(i-1, "up"))
-            with c_down:
-                st.button("▼", key=f"down_{i}", help="Bajar", on_click=_move_point, args=(i-1, "down"))
-            with c_del:
-                st.button("❌", key=f"del_{i}", help="Eliminar", on_click=_remove_point, args=(i-1,))
+            with col_r:
+                st.button("🗑️", key=f"del_{i}", help="Eliminar",
+                          on_click=_remove_point, args=(i-1,), use_container_width=True)
     else:
         st.info("Añade al menos **origen** y **destino** para generar la ruta.")
 
