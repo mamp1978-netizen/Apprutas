@@ -1,157 +1,79 @@
-# app_utils_core.py - versión mínima compatible para Apprutas-Pro
-from urllib.parse import urlencode, quote, quote_plus
+import urllib.parse
 
-# Si más adelante añades el cliente real de Google (gmaps), reemplaza este None.
-gmaps = None
-
-def suggest_addresses(q: str, min_len: int = 3, max_results: int = 8):
-    """
-    Sugerencias mínimas para no romper la UI.
-    Si hay integración real con Places, reemplaza por esa llamada.
-    """
-    q = (q or "").strip()
-    if len(q) < min_len:
+# ---------------------------------------------------------------------------
+# Autocompletado / resolución simulada (puedes enganchar tu API real si quieres)
+# ---------------------------------------------------------------------------
+def suggest_addresses(query, min_len=3, max_results=8):
+    if not query or len(query.strip()) < min_len:
         return []
-    # Simulamos: primera opción = lo que el usuario escribió
-    return [{"description": q}]
+    return [{"description": query.strip()}]
 
-def resolve_selection(label: str, _meta=None):
-    """
-    Enlaza etiqueta -> address normalizada.
-    Si tienes geocoding real, devuelve también lat/lng aquí.
-    """
+def resolve_selection(label, meta=None):
     return {"address": (label or "").strip()}
 
-def _encode_waypoints(waypoints, optimize=True):
-    if not waypoints:
-        return None
-    wps = [wp for wp in waypoints if wp]
-    if not wps:
-        return None
-    if optimize:
-        # Sintaxis de Google: optimize:true|wp1|wp2|...
-        return "optimize:true|" + "|".join(quote_plus(w) for w in wps)
-    return "|".join(quote_plus(w) for w in wps)
+# ---------------------------------------------------------------------------
+# Construcción de URLs Google / Waze / Apple
+#   - SIN "optimize:true"
+#   - Waypoints codificados y separados por %7C (NO '|')
+# ---------------------------------------------------------------------------
+def _encode(s: str) -> str:
+    return urllib.parse.quote_plus(s or "")
 
-def build_gmaps_url(origin: str, destination: str, waypoints=None,
-                    mode: str = "driving", avoid: str | None = None, optimize: bool = True):
+def _join_waypoints(wps):
+    enc = [_encode(w.strip()) for w in (wps or []) if (w or "").strip()]
+    # Para QR y enlaces fiables, usa '%7C' entre waypoints (no '|')
+    return "%7C".join(enc) if enc else ""
+
+def build_gmaps_url(origin, destination, waypoints=None, mode="driving", avoid=None):
     """
-    URL web de Google Maps Directions (abre navegador). Soporta waypoints + optimize.
+    URL web estándar que entiende el móvil, el navegador y el QR.
+    https://www.google.com/maps/dir/?api=1&origin=...&destination=...&travelmode=driving&waypoints=wp1%7Cwp2
     """
-    params = {
-        "api": 1,
-        "origin": origin or "",
-        "destination": destination or "",
-        "travelmode": mode or "driving",
-    }
+    params = [
+        "api=1",
+        f"origin={_encode(origin)}",
+        f"destination={_encode(destination)}",
+        f"travelmode={_encode(mode)}",
+    ]
+    wp = _join_waypoints(waypoints)
+    if wp:
+        params.append(f"waypoints={wp}")
+    if avoid:
+        params.append(f"avoid={_encode(avoid)}")
+    return "https://www.google.com/maps/dir/?" + "&".join(params)
+
+def build_gmaps_android_intent_url(origin, destination, waypoints=None, mode="driving", avoid=None):
+    """
+    Preferimos intent simple (solo destino) para abrir la app directo.
+    Si hay waypoints, devolvemos la URL web (Android suele abrir la app igualmente).
+    """
     if waypoints:
-        wps = _encode_waypoints(waypoints, optimize=optimize)
-        if wps:
-            params["waypoints"] = wps
-    if avoid:
-        params["avoid"] = avoid  # 'tolls', 'ferries', etc.
-    return f"https://www.google.com/maps/dir/?{urlencode(params)}"
+        return build_gmaps_url(origin, destination, waypoints, mode, avoid)
+    # Intent nativo de navegación
+    mode_map = {"driving": "d", "walking": "w", "bicycling": "b", "transit": "r"}
+    m = mode_map.get(mode, "d")
+    return f"google.navigation:q={_encode(destination)}&mode={m}"
 
-def build_gmaps_android_intent_url(origin: str | None = None,
-                                   destination: str | None = None,
-                                   waypoints=None,
-                                   mode: str = "driving",
-                                   avoid: str | None = None):
+def build_waze_url(origin, destination):
+    # En waze el esquema público fiable para compartir suele ser URL web también
+    # (waze:// funciona bien desde Android/iOS, pero para QR es más robusto https)
+    return (
+        "https://waze.com/ul"
+        f"?ll={_encode(destination)}"
+        f"&navigate=yes&from={_encode(origin)}"
+    )
+
+def build_apple_maps_url(origin, destination, waypoints=None):
     """
-    Intent para abrir la APP nativa de Google Maps.
-    Para máxima compatibilidad, priorizamos navegación directa al destino.
-    Nota: la app nativa suele ignorar múltiples waypoints si se pasa como 'navigation'.
+    Apple Maps no documenta oficialmente múltiples paradas por URL.
+    Usamos saddr/daddr (origen/destino). Si hay waypoints, los ignoramos en Apple (limitación).
     """
-    # Si hay destino, usamos navegación directa:
-    if destination:
-        # mode: 'd' (driving), 'w' (walking), 'b' (bicycle), 't' (transit) -> Google usa 'mode=' en web,
-        # en intents suele aceptar 'mode=d' como parte de la query, pero 'google.navigation' principalmente usa 'q=' y 'mode='.
-        # Lo más fiable es al menos pasar el destino:
-        base = f"google.navigation:q={quote(destination)}"
-        # (Opcional) Adjunta modo si quieres: &mode=d
-        mode_map = {"driving": "d", "walking": "w", "bicycling": "b", "transit": "t"}
-        if mode in mode_map:
-            base += f"&mode={mode_map[mode]}"
-        return base
+    return (
+        "https://maps.apple.com/"
+        f"?saddr={_encode(origin)}"
+        f"&daddr={_encode(destination)}"
+        "&dirflg=d"
+    )
 
-    # Si no hay destino, pero hay origen+waypoints, caemos a la URL web (mejor que nada)
-    return build_gmaps_url(origin or "", destination or "", waypoints=waypoints, mode=mode, avoid=avoid, optimize=True)
-
-def build_waze_url(origin: str, destination: str):
-    """
-    Waze: lo más compatible es abrir con 'q=destino' y navigate=yes.
-    """
-    if not destination:
-        return None
-    return f"https://waze.com/ul?navigate=yes&q={quote(destination)}"
-
-def build_apple_maps_url(origin: str, destination: str):
-    """
-    Apple Maps: básico (solo iOS/macOS abre nativo).
-    """
-    if not destination:
-        return None
-    # dirflg=d -> driving
-    return f"http://maps.apple.com/?daddr={quote(destination)}&dirflg=d"
-
-# ===================== PATCH: URL builders con place_id (Google) y 2-puntos (Apple) =====================
-
-def build_gmaps_url(
-    origin: str,
-    destination: str,
-    waypoints=None,
-    mode: str = "driving",
-    avoid: str | None = None,
-    optimize: bool = True,
-    origin_place_id: str | None = None,
-    destination_place_id: str | None = None,
-    waypoint_place_ids: list[str] | None = None,
-):
-    """
-    Genera https://www.google.com/maps/dir/?api=1 preferentemente con place_id:XXXX para
-    evitar ambigüedades en origen/destino/waypoints.
-    """
-    waypoints = waypoints or []
-    waypoint_place_ids = waypoint_place_ids or []
-
-    def fmt(addr: str, pid: str | None):
-        return f"place_id:{pid}" if pid else addr
-
-    origin_s = fmt(origin, origin_place_id)
-    dest_s = fmt(destination, destination_place_id)
-
-    # Combina direcciones y place_ids por índice
-    wp_elems = []
-    length = max(len(waypoints), len(waypoint_place_ids))
-    for i in range(length):
-        a = waypoints[i] if i < len(waypoints) else ""
-        p = waypoint_place_ids[i] if i < len(waypoint_place_ids) else None
-        wp_elems.append(fmt(a, p))
-    wp_param = "|".join(wp_elems) if wp_elems else None
-
-    params = {
-        "api": "1",
-        "origin": origin_s,
-        "destination": dest_s,
-        "travelmode": mode,
-    }
-    if wp_param:
-        params["waypoints"] = (("optimize:true|" if optimize else "") + wp_param)
-    if avoid:
-        params["avoid"] = avoid
-
-    import urllib.parse as up
-    q = "&".join(f"{k}={up.quote(v)}" for k, v in params.items() if v)
-    return f"https://www.google.com/maps/dir/?{q}"
-
-
-def build_apple_maps_url(origin: str, destination: str):
-    """
-    Apple Maps web básicamente soporta origen→destino. Ignora paradas intermedias.
-    """
-    import urllib.parse as up
-    base = "https://maps.apple.com/"
-    q = f"daddr={up.quote(destination)}&saddr={up.quote(origin)}&dirflg=d"
-    return f"{base}?{q}"
-
-# ===================== FIN PATCH =====================
+# Bandera de “API disponible” (simulada)
+gmaps = True

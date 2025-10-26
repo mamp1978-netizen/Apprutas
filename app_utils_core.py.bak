@@ -1,0 +1,71 @@
+import urllib.parse
+
+def _enc(s: str) -> str:
+    return urllib.parse.quote(s or "", safe="")
+
+def build_gmaps_url(
+    origin: str,
+    destination: str,
+    waypoints=None,
+    mode: str = "driving",
+    avoid: str | None = None,
+    optimize: bool = True,
+    *,
+    origin_place_id: str | None = None,
+    destination_place_id: str | None = None,
+    waypoint_place_ids: list[str] | None = None,
+):
+    """
+    Construye https://www.google.com/maps/dir/?api=1 priorizando place_id
+    (también para waypoints) para evitar POIs aleatorios al poner ciudades genéricas.
+    """
+    base = "https://www.google.com/maps/dir/?api=1"
+
+    o = f"place_id:{origin_place_id}" if origin_place_id else origin
+    d = f"place_id:{destination_place_id}" if destination_place_id else destination
+
+    # Waypoints: primero place_ids, si no hay, textos
+    wp_list: list[str] = []
+    if waypoint_place_ids:
+        wp_list.extend([f"place_id:{pid}" for pid in waypoint_place_ids if pid])
+    if (not wp_list) and waypoints:
+        wp_list.extend([w for w in waypoints if w])
+
+    # maps soporta optimize con prefijo "optimize:true|"
+    wp_param = None
+    if wp_list:
+        joined = "|".join(_enc(w) for w in wp_list)
+        wp_param = f"optimize:true|{joined}" if optimize else joined
+
+    qs = {
+        "origin": _enc(o),
+        "destination": _enc(d),
+        "travelmode": mode,
+    }
+    if wp_param:
+        qs["waypoints"] = wp_param
+    if avoid:
+        qs["avoid"] = avoid
+
+    return f"{base}&" + "&".join(f"{k}={v}" for k, v in qs.items())
+
+def build_waze_url(origin: str, destination: str):
+    # Waze universal link (si no hay app, abre su web)
+    return f"https://waze.com/ul?ll=&q={_enc(destination)}&navigate=yes"
+
+def build_apple_maps_url(origin: str, destination: str):
+    # Apple Maps (web): O->D; la web permite añadir paradas a mano.
+    return f"https://maps.apple.com/?saddr={_enc(origin)}&daddr={_enc(destination)}&dirflg=d"
+
+def build_gmaps_android_intent_url(
+    origin: str,
+    destination: str,
+    waypoints=None,
+    mode: str = "driving",
+    avoid: str | None = None,
+):
+    """
+    Para Android: si hay múltiples paradas devolvemos la URL web (la app la abre bien).
+    Para un solo destino podríamos usar geo:, pero mantenemos el mismo esquema web.
+    """
+    return build_gmaps_url(origin, destination, waypoints, mode, avoid, optimize=True)
