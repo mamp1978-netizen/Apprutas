@@ -150,11 +150,11 @@ def build_gmaps_url(
         encoded_waypoints = [_encode(w) for w in waypoints_list]
 
         # Cambia esta bandera si NO quieres que Google reordene las paradas
-        optimize_flag = True
+        optimize_flag = False
 
         if optimize_flag:
             # Google espera exactamente: optimize:true|wp1|wp2|...
-            waypoints_param = "optimize:true|" + "%7C".join(encoded_waypoints)
+            waypoints_param = "optimize:False|" + "%7C".join(encoded_waypoints)
         else:
             waypoints_param = "%7C".join(encoded_waypoints)
 
