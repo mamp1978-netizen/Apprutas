@@ -1,0 +1,10 @@
+cookie:
+  expiry_days: 30
+  key: 09b1ce52e225f6a148ece68d90db8f1f4a0a0f537a2b466cbc5601f268150757
+  name: auth_cookie
+credentials:
+  usernames:
+    Miguel A:
+      email: mamp1978@gmail.com
+      name: Miguel A
+      password_hash: 92803971b6e7e6c9006cd0bacaa652a46e21db936da631ccc083d08816e10abc

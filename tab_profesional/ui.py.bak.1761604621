@@ -301,8 +301,6 @@ def _save_load_col():
 def _build_and_show_outputs():
     ss = st.session_state
     pts = ss["prof_points"]
-    # Normaliza: quita vacíos/espacios
-    pts = [p for p in pts if isinstance(p,str) and p.strip()]
     if len(pts) < 2:
         st.warning("Añade origen y destino (mínimo 2 puntos).")
         return
@@ -327,15 +325,6 @@ def _build_and_show_outputs():
         waypoints_meta=waypoints_meta if waypoints_meta else None,
     )
     ss["last_gmaps_url"] = gmaps_web
-
-    # --- RENDER ENLACE GOOGLE MAPS (siempre) ---
-    if gmaps_web:
-        st.link_button("Abrir en Google Maps", gmaps_web, use_container_width=True)
-        with st.expander("Ver URL"):
-            st.code(gmaps_web)
-    else:
-        st.warning("No se pudo generar la URL de Google Maps.")
-    # --- FIN RENDER ---
 
     # Waze y Apple también usan el objeto meta
     waze = build_waze_url(o_meta, d_meta)

@@ -1,0 +1,142 @@
+import urllib.parse
+import os
+import streamlit as st
+from dotenv import load_dotenv
+import googlemaps
+
+# ---------------------------------------------------------------------------
+# Cargar variables de entorno
+# ---------------------------------------------------------------------------
+load_dotenv()
+GMAPS_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+# ---------------------------------------------------------------------------
+# Inicialización del cliente de Google Maps
+# ---------------------------------------------------------------------------
+@st.cache_resource
+def get_gmaps_client():
+    key_to_use = GMAPS_API_KEY
+    if not key_to_use:
+        st.warning("⚠️ La clave GOOGLE_API_KEY no está configurada. Se usará modo simulado.")
+        return None
+    try:
+        client = googlemaps.Client(key=key_to_use)
+        client.geocode("Barcelona")
+        return client
+    except Exception:
+        return None
+
+GMAPS_CLIENT = get_gmaps_client()
+
+# ---------------------------------------------------------------------------
+# Geocodificación Real
+# ---------------------------------------------------------------------------
+def geocode_address(query):
+    if not GMAPS_CLIENT:
+        return None
+    try:
+        results = GMAPS_CLIENT.geocode(query)
+        if results:
+            location = results[0]['geometry']['location']
+            formatted_address = results[0]['formatted_address']
+            return {
+                "address": formatted_address,
+                "lat": location['lat'],
+                "lon": location['lng']
+            }
+    except Exception:
+        return None
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Autocompletado / sugerencias
+# ---------------------------------------------------------------------------
+def suggest_addresses(query, min_len=3, max_results=8):
+    if not query or len(query.strip()) < min_len:
+        return []
+    return [{"description": query.strip()}]
+
+
+def resolve_selection(label, meta=None):
+    """Convierte texto de dirección en coordenadas reales."""
+    geo_data = geocode_address(label)
+    if geo_data:
+        coords = f"{geo_data['lat']},{geo_data['lon']}"
+        return {"address": geo_data['address'], "coords": coords}
+    return {"address": (label or "").strip(), "coords": (label or "").strip()}
+
+
+# ---------------------------------------------------------------------------
+# Codificador URL seguro
+# ---------------------------------------------------------------------------
+def _encode(s: str) -> str:
+    return urllib.parse.quote_plus(s or "")
+
+
+# ---------------------------------------------------------------------------
+# Construcción de URLs de navegación
+# ---------------------------------------------------------------------------
+def build_gmaps_url(origin_meta, destination_meta, waypoints_meta=None, mode="driving", avoid=None):
+    """
+    Corrige el error de 'optimize:true' que aparecía como punto literal.
+    """
+    origin = origin_meta.get("coords", origin_meta.get("address"))
+    destination = destination_meta.get("coords", destination_meta.get("address"))
+    waypoints = [w.get("coords", w.get("address")) for w in (waypoints_meta or [])]
+
+    params = [
+        "api=1",
+        f"origin={_encode(origin)}",
+        f"destination={_encode(destination)}",
+        f"travelmode={_encode(mode)}",
+    ]
+
+    if waypoints:
+        encoded_waypoints = [_encode(w.strip()) for w in waypoints if (w or "").strip()]
+        # ✅ Corregido: optimize:true se usa correctamente, no como parada
+        waypoints_param = "optimize:true|" + "|".join(encoded_waypoints)
+        params.append(f"waypoints={urllib.parse.quote(waypoints_param)}")
+
+    if avoid:
+        params.append(f"avoid={_encode(avoid)}")
+
+    return "https://www.google.com/maps/dir/?" + "&".join(params)
+
+
+def build_waze_url(origin_meta, destination_meta):
+    """Waze usa la dirección formateada para mejor fiabilidad."""
+    origin = origin_meta.get("address")
+    destination = destination_meta.get("address")
+
+    if destination_meta.get("lat") and destination_meta.get("lon"):
+        ll = f"{destination_meta['lat']},{destination_meta.get('lon')}"
+        return (
+            "https://waze.com/ul"
+            f"?ll={_encode(ll)}"
+            f"&navigate=yes&from_name={_encode(origin)}"
+        )
+
+    return (
+        "https://waze.com/ul"
+        f"?q={_encode(destination)}"
+        f"&navigate=yes&from_name={_encode(origin)}"
+    )
+
+
+def build_apple_maps_url(origin_meta, destination_meta, waypoints=None):
+    """Apple Maps usa la dirección formateada."""
+    origin = origin_meta.get("address")
+    destination = destination_meta.get("address")
+    return (
+        "https://maps.apple.com/"
+        f"?saddr={_encode(origin)}"
+        f"&daddr={_encode(destination)}"
+        "&dirflg=d"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Bandera de disponibilidad de API
+# ---------------------------------------------------------------------------
+gmaps = bool(GMAPS_CLIENT)
