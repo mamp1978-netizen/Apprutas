@@ -2,6 +2,6 @@ streamlit
 googlemaps
 qrcode
 streamlit_searchbox
-streamlit-authenticator  <-- ¡ESTA ES LA CLAVE!
-pyyaml                   <-- Necesaria para leer el config.yaml
-python-dotenv            <-- Necesaria para leer el .env
+streamlit-authenticator
+pyyaml
+python-dotenv
