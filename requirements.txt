@@ -1,4 +1,7 @@
-streamlit==1.50.0
-googlemaps==4.10.0
+streamlit
+googlemaps
 qrcode
 streamlit_searchbox
+streamlit-authenticator  <-- ¡ESTA ES LA CLAVE!
+pyyaml                   <-- Necesaria para leer el config.yaml
+python-dotenv            <-- Necesaria para leer el .env
